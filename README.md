@@ -1,12 +1,18 @@
-# Bloomberg Terminal (Free-Data Edition)
+# JMR's Bloomberg Terminal
 
 A single-file, browser-only clone of the Bloomberg Terminal — phosphor-green monospace, dense data panels, pull-down configuration — powered entirely by **free, public data sources**. No API keys. No backend. No build step.
 
-**Live demo:** https://jmrothberg.github.io/bloomberg-terminal/
+## ► [LAUNCH THE TERMINAL →](https://jmrothberg.github.io/bloomberg-terminal/)
+
+[![JMR's Bloomberg Terminal](JMRs_Bloomberg.png)](https://jmrothberg.github.io/bloomberg-terminal/)
+
+> Click the screenshot or the launch link above to open the live terminal in your browser. No install, no signup, no keys.
+
+---
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ BLOOMBERG TERMINAL v2.0            [ FREE DATA · CORE MARKETS ] │
+│ JMR's BLOOMBERG TERMINAL           [ FREE DATA · CORE MARKETS ] │
 ├─────────────────────────────┬───────────────────────────────────┤
 │ ▸ INDICES ▾                 │ ▸ NEWS · Markets ▾                │
 │   ^GSPC   5,423.45  +0.45%  │   12m ago · Reuters               │
@@ -74,7 +80,7 @@ Your panel layout, assignments, symbols, and news topic are saved to `localStora
 
 Just open the demo link — no install, no setup:
 
-**https://jmrothberg.github.io/bloomberg-terminal/**
+### 🟢 **[► https://jmrothberg.github.io/bloomberg-terminal/ ◄](https://jmrothberg.github.io/bloomberg-terminal/)**
 
 ### Option B — Run locally
 
