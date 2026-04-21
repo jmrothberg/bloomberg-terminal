@@ -1472,15 +1472,30 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         function changePanelType(pid, newType) {
             const panel = state.panels[pid];
             if (!panel || panel.type === newType) return;
+
+            panel.memory = panel.memory || {};
+            // Stash the current panel's symbols/topic under its old type so
+            // switching back restores the user's additions instead of defaults.
+            if (PANEL_TYPES[panel.type].usesSymbols && Array.isArray(panel.symbols)) {
+                panel.memory[panel.type] = { symbols: [...panel.symbols] };
+            } else if (panel.type === 'news' && panel.topic) {
+                panel.memory.news = { topic: panel.topic };
+            }
+
             panel.type = newType;
-            // Seed fresh defaults when switching to a type that uses symbols
             if (PANEL_TYPES[newType].usesSymbols) {
-                panel.symbols = DEFAULT_SYMBOLS[newType] ? [...DEFAULT_SYMBOLS[newType]] : [];
+                const remembered = panel.memory[newType] && panel.memory[newType].symbols;
+                panel.symbols = remembered
+                    ? [...remembered]
+                    : (DEFAULT_SYMBOLS[newType] ? [...DEFAULT_SYMBOLS[newType]] : []);
             } else {
                 delete panel.symbols;
             }
-            if (newType === 'news' && !panel.topic) panel.topic = 'market';
-            if (newType !== 'news') delete panel.topic;
+            if (newType === 'news') {
+                panel.topic = (panel.memory.news && panel.memory.news.topic) || panel.topic || 'market';
+            } else {
+                delete panel.topic;
+            }
             delete panel._articles;
             saveState();
             renderAllPanels();
