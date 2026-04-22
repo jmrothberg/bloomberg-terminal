@@ -978,26 +978,37 @@ Press ESC (or [×]) to close.</pre>
                     <div class="help-section-title">CHANGE NEWS TOPIC</div>
                     <pre>On a NEWS panel, click a topic chip in the tray:
 Markets · Tech/AI · Semis · Crypto · Economy · Energy ·
-Politics · World · Chokepoints.
+Politics · World · Chokepoints · EIA.
 Or type a custom query and press Enter to make your own topic.
 
 CHOKEPOINTS is a curated preset for shipping / supply-chain
 disruption — Red Sea, Suez, Panama, Strait of Hormuz, tanker
 incidents. Ripples into oil (CL=F), nat-gas (NG=F), container
 shippers, and the dry-bulk ETF (BDRY) before the move shows
-in price panels.</pre>
+in price panels.
+
+EIA pulls EIA's Today in Energy RSS directly (not a Google
+News search) — every article is EIA-authored analysis of the
+latest petroleum / natural gas / electricity / renewables
+release. Pair with the Energy release schedule in CALENDAR:
+CALENDAR tells you WHEN a WPSR or Nat Gas print is coming,
+EIA tells you EIA's own read on the last one.</pre>
                 </div>
 
                 <div class="help-section">
                     <div class="help-section-title">SCHEDULED RELEASES (CALENDAR)</div>
-                    <pre>The CALENDAR panel lists upcoming US data releases, straddling
-both macro and energy info-flow. Click a CATEGORY chip in the
-tray to filter:
+                    <pre>The CALENDAR panel lists upcoming US data releases. Release
+DATES are computed client-side from weekday math — CALENDAR
+never fetches anything from BLS, BEA, or EIA. When a release
+hits, you still have to read the actual number elsewhere
+(e.g. the EIA news chip for EIA's own write-up).
+
+Click a CATEGORY chip in the tray to filter:
 
   ALL    — every release, interleaved by date (default)
   MACRO  — BLS / Fed / ISM / BEA / Census releases:
            NFP, CPI, PPI, Retail Sales, PCE, GDP, ISM, FOMC.
-  ENERGY — EIA releases, computed client-side (no key needed):
+  ENERGY — EIA release dates (schedule only, no API calls):
            - WPSR (crude + gasoline + distillate stocks) —
              every Wed 10:30 ET. Moves CL=F, RB=F ~2% on
              surprise; XLE constituents track closely.
@@ -1118,7 +1129,8 @@ Bonds backup:  US Treasury Fiscal Data API
 Fundamentals: Yahoo fundamentals-timeseries + v1/search
 Prediction:   Polymarket Gamma (proxied) + CLOB (direct)
 News:         Google News RSS (proxied)
-Calendar:     Computed from US release schedule (macro + EIA)
+EIA news:     eia.gov/rss/todayinenergy.xml (proxied, direct RSS)
+Calendar:     Computed client-side — schedule only, no API
 Movers/VIX:   Derived locally from loaded quotes
 Seismic:      USGS earthquake.usgs.gov M4.5+ week feed (direct)
 Cyclones:     NOAA NHC CurrentStorms.json (proxied)</pre>
@@ -1249,6 +1261,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             politics:    { label: 'Politics',    query: 'markets policy regulation congress' },
             world:       { label: 'World',       query: 'world markets global finance europe asia' },
             chokepoints: { label: 'Chokepoints', query: 'Red Sea Suez Panama Canal Strait of Hormuz shipping disruption tanker' },
+            // Direct RSS presets — feedUrl bypasses the Google-News search step
+            // and parses the origin's own RSS feed through the same proxy rotation.
+            eia:         { label: 'EIA',         feedUrl: 'https://www.eia.gov/rss/todayinenergy.xml', sourceLabel: 'EIA' },
         };
 
         // USGS feed covers every M4.5+ quake worldwide over the last 7 days.
@@ -1876,11 +1891,17 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (cached && Date.now() - cached.ts < 60_000) return cached.articles;
 
             const topicObj = NEWS_TOPICS[topic] || { query: topic, label: topic };
-            // Append Google News' when: operator so it returns only recent
-            // stories — without this, the RSS feed often leads with older
-            // "pillar" articles ranked by authority, not recency.
-            const q = `${topicObj.query} ${NEWS_FRESH_WINDOW}`;
-            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+            // A topic with `feedUrl` is a direct RSS source (e.g. EIA Today in
+            // Energy) — fetch the origin feed as-is. Otherwise fall back to
+            // the Google-News search path, and append the when: operator so
+            // the RSS leads with recent stories instead of "pillar" articles.
+            let rssUrl;
+            if (topicObj.feedUrl) {
+                rssUrl = topicObj.feedUrl;
+            } else {
+                const q = `${topicObj.query} ${NEWS_FRESH_WINDOW}`;
+                rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+            }
             try {
                 const xml = await fetchViaProxy(rssUrl, { parseJson: false });
                 const doc = new DOMParser().parseFromString(xml, 'text/xml');
@@ -1890,7 +1911,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     const title = it.querySelector('title')?.textContent?.trim() || '(untitled)';
                     const link  = it.querySelector('link')?.textContent?.trim() || '#';
                     const pub   = it.querySelector('pubDate')?.textContent?.trim();
-                    const src   = it.querySelector('source')?.textContent?.trim() || extractSource(title);
+                    const src   = it.querySelector('source')?.textContent?.trim()
+                                  || topicObj.sourceLabel
+                                  || extractSource(title);
                     const pubMs = pub ? Date.parse(pub) : NaN;
                     return {
                         title: cleanHeadline(title, src),
