@@ -45,7 +45,7 @@ A single-file, browser-only clone of the Bloomberg Terminal — phosphor-green m
 
 ## Features
 
-### Eleven panel types — reassign any panel to any type
+### Thirteen panel types — reassign any panel to any type
 
 | Type | What it shows | Default symbols |
 |---|---|---|
@@ -60,6 +60,8 @@ A single-file, browser-only clone of the Bloomberg Terminal — phosphor-green m
 | **MOVERS** | Derived top gainers/losers, VIX, sentiment | From loaded quotes |
 | **PREDICTION MARKETS** | Live Polymarket markets ranked by 24h volume | Filter: All · Politics · Crypto · Sports · Elections · Economics |
 | **HEAT MAP** | Bloomberg-HMAP-style sector-weighted treemap | Source: any symbol panel |
+| **SEISMIC EVENTS** | Live USGS earthquake feed (M4.5+ last 7 days) | Threshold: M4.5 · M5 · M5.5 · M6 · M7 |
+| **TROPICAL CYCLONES** | Active NOAA NHC storms with Saffir-Simpson category | Basin: All · Atlantic · East Pacific · Central Pacific |
 
 ### Per-row extras
 
@@ -90,6 +92,15 @@ The `PREDICTION MARKETS` panel lists the top 20 active Polymarket markets by 24-
 ### Heat map (HMAP-style)
 
 The `HEAT MAP` panel renders a squarified treemap of another panel's symbols — tiles sized by market cap, colored on a diverging red↔green ramp by day change, grouped into sector buckets. Pick the source panel from the tray's SOURCE dropdown. Click any tile to open the ticker drilldown. Sector data is hydrated progressively from Yahoo's fundamentals endpoint; first paint uses equal-weighted `UNCLASSIFIED` tiles and re-lays out as sectors resolve.
+
+### Physical-world risk feeds (seismic + tropical cyclones)
+
+Two panel types surface structured, real-world events that move markets before the news cycle prices them in:
+
+- **SEISMIC EVENTS** — USGS M4.5+ worldwide feed, last 7 days. Magnitude threshold chip (`M4.5` / `M5` / `M5.5` / `M6` / `M7`) filters the list. Each row is color-coded by severity — dim for sub-5, green for moderate, red for M6+, red-filled for M7+. Rows show depth in km, a `TSUNAMI` tag when USGS flags one, and link to the event's USGS detail page. Why it matters: a M6+ near Hsinchu, Kyushu, Santiago, or the Gulf Coast can move TSM, ASML, autos, copper miners, and insurers before the headline lands.
+- **TROPICAL CYCLONES** — NOAA National Hurricane Center active-storms feed. Basin chip (`Atlantic` / `East Pacific` / `Central Pacific` / `All`). Each row shows the Saffir-Simpson category derived from 1-minute sustained wind (or `TD` / `TS` for sub-hurricane systems), wind speed in mph, central pressure in mb, and links to the NHC public advisory. Why it matters: Gulf hurricanes drive nat-gas and gasoline; Atlantic majors hit reinsurance.
+
+Both feeds refresh on the same 60s tick as quotes and news.
 
 ### Extended hours (pre-market / after-hours)
 
@@ -185,6 +196,8 @@ Every number on the screen is from one of these free, public sources. No API key
 | Prediction markets list | [Polymarket Gamma API](https://docs.polymarket.com/api-reference/introduction) (via proxy) | — | Gamma has no CORS header; same proxy rotation as Yahoo |
 | Prediction history chart | [Polymarket CLOB](https://docs.polymarket.com/api-reference/clob) `prices-history` | — | CLOB is CORS-open — direct fetch, no proxy |
 | Heat map sectors / market caps | Yahoo `fundamentals-timeseries` + `v1/search` | — | Same crumb-free endpoints as drilldown |
+| Seismic events | [USGS M4.5+ week feed](https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson) | — | CORS-open GeoJSON, direct fetch |
+| Tropical cyclones | [NOAA NHC `CurrentStorms.json`](https://www.nhc.noaa.gov/CurrentStorms.json) (via proxy) | — | NHC doesn't serve CORS headers; same proxy rotation as Yahoo |
 
 ### CORS proxies tried in order
 

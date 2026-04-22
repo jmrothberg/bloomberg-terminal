@@ -597,6 +597,54 @@
 
         .news-headline a:hover { text-decoration: underline; }
 
+        /* Seismic + storm rows mirror .news-item but lead with a color-coded
+           severity badge (magnitude / Saffir-Simpson category). */
+        .event-item {
+            padding: 6px 0;
+            border-bottom: 1px dashed var(--border-color);
+        }
+        .event-item:last-child { border-bottom: none; }
+        .event-meta {
+            font-size: 9px;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .event-headline {
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .event-headline a {
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+        .event-headline a:hover { text-decoration: underline; }
+
+        .seismic-mag, .storm-cat {
+            display: inline-block;
+            padding: 1px 5px;
+            font-weight: bold;
+            font-size: 9px;
+            border: 1px solid var(--border-color);
+        }
+        .seismic-sev-minor    { color: var(--text-dim); }
+        .seismic-sev-moderate { color: var(--text-accent); }
+        .seismic-sev-major    { color: var(--color-negative); border-color: var(--color-negative); }
+        .seismic-sev-severe   { color: var(--bg-primary); background: var(--color-negative); border-color: var(--color-negative); }
+        .storm-sev-minor      { color: var(--text-dim); }
+        .storm-sev-moderate   { color: var(--text-accent); }
+        .storm-sev-major      { color: var(--color-negative); border-color: var(--color-negative); }
+        .storm-sev-severe     { color: var(--bg-primary); background: var(--color-negative); border-color: var(--color-negative); }
+        .event-tag-warn {
+            color: var(--bg-primary);
+            background: var(--color-negative);
+            padding: 0 4px;
+            font-weight: bold;
+        }
+
         .pred-row {
             padding: 6px 4px;
             border-bottom: 1px dashed var(--border-color);
@@ -960,6 +1008,35 @@ to open the ticker drilldown.</pre>
                 </div>
 
                 <div class="help-section">
+                    <div class="help-section-title">SEISMIC EVENTS &amp; TROPICAL CYCLONES</div>
+                    <pre>Two panel types surface physical-world events that move markets
+before the news cycle prices them in.
+
+SEISMIC EVENTS — USGS M4.5+ feed for the last 7 days. Filter by
+MIN MAG chip (M4.5 / M5 / M5.5 / M6 / M7). Each row shows:
+  - Magnitude badge (color-coded: dim → green → red → red-fill)
+  - Relative time and depth in km
+  - TSUNAMI tag if USGS flagged a tsunami advisory
+  - Click the location to open the USGS event page
+Why it matters: a M6+ near Hsinchu, Kyushu, Santiago, or the
+Gulf Coast can move TSM, ASML, autos, copper miners, and
+insurers minutes before the headline lands.
+
+TROPICAL CYCLONES — NOAA NHC active-storms feed. Filter by
+BASIN chip (Atlantic / East Pacific / Central Pacific / All).
+Each row shows:
+  - Saffir-Simpson CAT badge (derived from 1-min sustained
+    wind) or TD / TS for sub-hurricane systems
+  - Wind speed (mph) and central pressure (mb)
+  - Basin + last-update time
+  - Click the storm name for the NHC public advisory
+Why it matters: Gulf hurricanes drive nat-gas, gasoline, and
+Florida insurer moves; Atlantic majors hit reinsurance too.
+
+Both feeds auto-refresh on the same 60s tick as everything else.</pre>
+                </div>
+
+                <div class="help-section">
                     <div class="help-section-title">DATA SOURCES (ALL FREE / PUBLIC)</div>
                     <pre>Quotes:        Yahoo Finance (via public CORS proxies)
 Crypto backup: CoinGecko public API
@@ -969,7 +1046,9 @@ Fundamentals: Yahoo fundamentals-timeseries + v1/search
 Prediction:   Polymarket Gamma (proxied) + CLOB (direct)
 News:         Google News RSS (proxied)
 Calendar:     Computed from US economic release schedule
-Movers/VIX:   Derived locally from loaded quotes</pre>
+Movers/VIX:   Derived locally from loaded quotes
+Seismic:      USGS earthquake.usgs.gov M4.5+ week feed (direct)
+Cyclones:     NOAA NHC CurrentStorms.json (proxied)</pre>
                 </div>
 
                 <div class="help-section">
@@ -1063,9 +1142,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             movers:      { label: 'MOVERS & SENTIMENT',  usesSymbols: false, usesNews: false },
             prediction:  { label: 'PREDICTION MARKETS',  usesSymbols: false, usesNews: false },
             heatmap:     { label: 'HEAT MAP',            usesSymbols: false, usesNews: false },
+            seismic:     { label: 'SEISMIC EVENTS',      usesSymbols: false, usesNews: false },
+            storms:      { label: 'TROPICAL CYCLONES',   usesSymbols: false, usesNews: false },
         };
 
-        const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','heatmap','news','prediction','calendar','movers'];
+        const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','heatmap','news','prediction','calendar','movers','seismic','storms'];
 
         const POLYMARKET_FILTERS = [
             { key: 'all',       label: 'All',       slug: null },
@@ -1095,6 +1176,27 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             politics: { label: 'Politics',   query: 'markets policy regulation congress' },
             world:    { label: 'World',      query: 'world markets global finance europe asia' },
         };
+
+        // USGS feed covers every M4.5+ quake worldwide over the last 7 days.
+        // We fetch this once and filter client-side by the panel's minMag chip.
+        const SEISMIC_FEED_URL = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson';
+        const SEISMIC_MIN_MAGS = [
+            { key: 4.5, label: 'M4.5+' },
+            { key: 5.0, label: 'M5+' },
+            { key: 5.5, label: 'M5.5+' },
+            { key: 6.0, label: 'M6+' },
+            { key: 7.0, label: 'M7+' },
+        ];
+
+        // NHC publishes a single JSON of every currently active Atlantic + East-Pacific
+        // storm. Central-Pacific storms are also reported here when CPHC is active.
+        const STORMS_FEED_URL = 'https://www.nhc.noaa.gov/CurrentStorms.json';
+        const STORM_BASINS = [
+            { key: 'all', label: 'All' },
+            { key: 'al',  label: 'Atlantic' },
+            { key: 'ep',  label: 'E. Pacific' },
+            { key: 'cp',  label: 'C. Pacific' },
+        ];
 
         // Known FOMC meeting dates for 2026 (publicly scheduled). Update annually.
         const FOMC_2026 = ['2026-01-28','2026-03-18','2026-04-29','2026-06-17','2026-07-29','2026-09-16','2026-10-28','2026-12-09'];
@@ -1830,6 +1932,81 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }));
         }
 
+        // USGS M4.5+ feed is CORS-open and cheap; one fetch feeds every seismic
+        // panel regardless of how many the user has placed on the grid.
+        async function fetchSeismicEvents() {
+            try {
+                const url = SEISMIC_FEED_URL + '?_t=' + Date.now();
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) return null;
+                const data = await res.json();
+                const features = data?.features || [];
+                return features.map(f => {
+                    const p = f.properties || {};
+                    const c = f.geometry?.coordinates || [];
+                    return {
+                        id: f.id,
+                        mag: typeof p.mag === 'number' ? p.mag : null,
+                        place: p.place || '',
+                        time: typeof p.time === 'number' ? p.time : null,
+                        tsunami: p.tsunami === 1,
+                        url: p.url || null,
+                        depth: Number.isFinite(c[2]) ? c[2] : null,
+                    };
+                }).filter(e => e.mag != null && e.time != null);
+            } catch {
+                return null;
+            }
+        }
+
+        async function refreshSeismicPanels() {
+            const ids = state.layout.filter(pid => state.panels[pid]?.type === 'seismic');
+            if (!ids.length) return;
+            const events = await fetchSeismicEvents();
+            for (const pid of ids) {
+                state.panels[pid]._events = events || [];
+                state.panels[pid]._eventsFailed = !events;
+            }
+        }
+
+        // NHC's CurrentStorms.json lacks a CORS header, so route through the
+        // same proxy rotation as Yahoo/Polymarket/RSS.
+        async function fetchActiveStorms() {
+            try {
+                const data = await fetchViaProxy(STORMS_FEED_URL);
+                const list = data?.activeStorms || [];
+                return list.map(s => {
+                    const id = String(s.id || '');
+                    return {
+                        id,
+                        binNumber: s.binNumber || '',
+                        name: s.name || s.id || '',
+                        classification: s.classification || '',
+                        intensity: Number(s.intensity) || null,   // kt
+                        intensityMph: Number(s.intensityMph) || null,
+                        pressure: Number(s.pressure) || null,     // mb
+                        movementDir: s.movementDir ?? null,
+                        movementSpeed: Number(s.movementSpeed) || null,
+                        lastUpdate: s.lastUpdate || null,
+                        basin: id.slice(0, 2).toLowerCase(),      // 'al' | 'ep' | 'cp'
+                        url: s.publicAdvisory?.url || s.forecastAdvisory?.url || null,
+                    };
+                });
+            } catch {
+                return null;
+            }
+        }
+
+        async function refreshStormPanels() {
+            const ids = state.layout.filter(pid => state.panels[pid]?.type === 'storms');
+            if (!ids.length) return;
+            const storms = await fetchActiveStorms();
+            for (const pid of ids) {
+                state.panels[pid]._storms = storms || [];
+                state.panels[pid]._stormsFailed = !storms;
+            }
+        }
+
         async function refreshAll() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -1837,7 +2014,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (btn) btn.disabled = true;
             updateStatus('FETCHING…', 'normal');
             try {
-                await Promise.all([refreshQuotes(), refreshNewsPanels(), refreshPredictionPanels()]);
+                await Promise.all([refreshQuotes(), refreshNewsPanels(), refreshPredictionPanels(), refreshSeismicPanels(), refreshStormPanels()]);
                 renderAllPanels();
                 if (currentDrilldown && currentDrilldown.kind === 'ticker') {
                     renderDrilldownPrice(currentDrilldown.symbol);
@@ -1937,6 +2114,14 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     if (src) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${PANEL_TYPES[src.type].label}</span>`;
                 }
             }
+            if (panel.type === 'seismic') {
+                const m = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· M${m.toFixed(1)}+</span>`;
+            }
+            if (panel.type === 'storms') {
+                const b = STORM_BASINS.find(x => x.key === (panel.basin || 'all'));
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${b ? b.label : panel.basin}</span>`;
+            }
             return extTag;
         }
 
@@ -2025,6 +2210,38 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 `;
             }
 
+            let seismicSection = '';
+            if (panel.type === 'seismic') {
+                const current = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
+                const chips = SEISMIC_MIN_MAGS.map(m => {
+                    const active = current === m.key ? ' active' : '';
+                    return `<button class="chip${active}" onclick="setSeismicMinMag('${pid}',${m.key})">${m.label}</button>`;
+                }).join('');
+                seismicSection = `
+                    <div class="tray-row">
+                        <span class="tray-label">MIN MAG</span>
+                        ${chips}
+                        <span class="tray-hint">USGS M4.5+ feed · last 7 days</span>
+                    </div>
+                `;
+            }
+
+            let stormsSection = '';
+            if (panel.type === 'storms') {
+                const current = panel.basin || 'all';
+                const chips = STORM_BASINS.map(b => {
+                    const active = current === b.key ? ' active' : '';
+                    return `<button class="chip${active}" onclick="setStormBasin('${pid}','${b.key}')">${b.label}</button>`;
+                }).join('');
+                stormsSection = `
+                    <div class="tray-row">
+                        <span class="tray-label">BASIN</span>
+                        ${chips}
+                        <span class="tray-hint">NOAA NHC · active cyclones only</span>
+                    </div>
+                `;
+            }
+
             let heatmapSection = '';
             if (panel.type === 'heatmap') {
                 // List live symbol panels first, then synthetic default-list
@@ -2081,6 +2298,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     ${symbolSection}
                     ${topicSection}
                     ${predictionSection}
+                    ${seismicSection}
+                    ${stormsSection}
                     ${heatmapSection}
                     ${extHoursSection}
                 </div>
@@ -2102,6 +2321,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 case 'movers':     return renderMovers();
                 case 'prediction': return renderPredictionPanel(panel);
                 case 'heatmap':    return renderHeatMap(panel);
+                case 'seismic':    return renderSeismic(panel);
+                case 'storms':     return renderStorms(panel);
                 default:           return `<div class="no-data">Unknown panel type: ${panel.type}</div>`;
             }
         }
@@ -3090,6 +3311,105 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         }
 
         // ============================================================
+        // RENDERING — SEISMIC EVENTS
+        // ============================================================
+
+        function renderSeismic(panel) {
+            const events = panel._events;
+            const minMag = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
+            if (events == null) {
+                return panel._eventsFailed
+                    ? `<div class="error-message">USGS FEED UNAVAILABLE — [R] to retry.</div>`
+                    : `<div class="loading">LOADING SEISMIC EVENTS…</div>`;
+            }
+            const filtered = events
+                .filter(e => e.mag >= minMag)
+                .sort((a, b) => b.time - a.time)
+                .slice(0, 50);
+            if (!filtered.length) {
+                return `<div class="no-data">No M${minMag}+ events in the last 7 days.</div>`;
+            }
+            return filtered.map(e => {
+                const sev = e.mag >= 7 ? 'seismic-sev-severe'
+                          : e.mag >= 6 ? 'seismic-sev-major'
+                          : e.mag >= 5 ? 'seismic-sev-moderate'
+                          : 'seismic-sev-minor';
+                const depthStr = Number.isFinite(e.depth) ? `${Math.round(e.depth)}km` : '';
+                const tsunamiTag = e.tsunami ? ` · <span class="event-tag-warn">TSUNAMI</span>` : '';
+                const when = formatRelativeTime(new Date(e.time).toISOString());
+                const href = e.url ? escapeAttr(e.url) : '#';
+                return `
+                    <div class="event-item">
+                        <div class="event-meta">
+                            <span class="seismic-mag ${sev}">M${e.mag.toFixed(1)}</span>
+                            <span>${when}${depthStr ? ' · ' + depthStr + ' deep' : ''}${tsunamiTag}</span>
+                        </div>
+                        <div class="event-headline">
+                            <a href="${href}" target="_blank" rel="noopener">${escapeHTML(e.place || '(location unknown)')}</a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ============================================================
+        // RENDERING — TROPICAL CYCLONES
+        // ============================================================
+
+        function classifyStorm(classification, intensityKt) {
+            // NHC classification codes: TD, TS, HU, STY, MH (major hurricane)
+            // Derive Saffir-Simpson category from 1-min sustained wind in knots.
+            const kt = Number(intensityKt) || 0;
+            if (classification === 'HU' || classification === 'MH' || classification === 'STY' || kt >= 64) {
+                const cat = kt >= 137 ? 5 : kt >= 113 ? 4 : kt >= 96 ? 3 : kt >= 83 ? 2 : 1;
+                return { tag: `CAT ${cat}`, cls: cat >= 3 ? 'storm-sev-severe' : 'storm-sev-major' };
+            }
+            if (classification === 'TS' || kt >= 34) return { tag: 'TS',  cls: 'storm-sev-moderate' };
+            if (classification === 'TD' || kt > 0)   return { tag: 'TD',  cls: 'storm-sev-minor' };
+            return { tag: classification || 'LOW', cls: 'storm-sev-minor' };
+        }
+
+        function basinLabel(code) {
+            const b = STORM_BASINS.find(x => x.key === code);
+            return b ? b.label : (code || '').toUpperCase();
+        }
+
+        function renderStorms(panel) {
+            const storms = panel._storms;
+            const basin = panel.basin || 'all';
+            if (storms == null) {
+                return panel._stormsFailed
+                    ? `<div class="error-message">NHC FEED UNAVAILABLE — [R] to retry.</div>`
+                    : `<div class="loading">LOADING TROPICAL CYCLONES…</div>`;
+            }
+            const filtered = basin === 'all' ? storms : storms.filter(s => s.basin === basin);
+            if (!filtered.length) {
+                return `<div class="no-data">No active tropical cyclones${basin !== 'all' ? ' in ' + basinLabel(basin) : ''}.</div>`;
+            }
+            return filtered.map(s => {
+                const cat = classifyStorm(s.classification, s.intensity);
+                const wind = s.intensityMph ? `${Math.round(s.intensityMph)} mph`
+                           : s.intensity    ? `${Math.round(s.intensity)} kt`
+                           : '';
+                const pres = s.pressure ? ` · ${s.pressure} mb` : '';
+                const where = basinLabel(s.basin);
+                const when = s.lastUpdate ? ` · ${formatRelativeTime(s.lastUpdate)}` : '';
+                const href = s.url ? escapeAttr(s.url) : 'https://www.nhc.noaa.gov/';
+                return `
+                    <div class="event-item">
+                        <div class="event-meta">
+                            <span class="storm-cat ${cat.cls}">${cat.tag}</span>
+                            <span>${wind}${pres} · ${escapeHTML(where)}${when}</span>
+                        </div>
+                        <div class="event-headline">
+                            <a href="${href}" target="_blank" rel="noopener">${escapeHTML(s.name)}</a>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ============================================================
         // RENDERING — CALENDAR
         // ============================================================
 
@@ -3340,6 +3660,22 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (panel.sourcePanelId) panel.memory.heatmap = { sourcePanelId: panel.sourcePanelId };
                 delete panel.sourcePanelId;
             }
+            if (newType === 'seismic') {
+                const mem = panel.memory.seismic;
+                panel.minMag = typeof mem?.minMag === 'number' ? mem.minMag
+                             : typeof panel.minMag === 'number' ? panel.minMag
+                             : 5.5;
+            } else {
+                if (typeof panel.minMag === 'number') panel.memory.seismic = { minMag: panel.minMag };
+                delete panel.minMag;
+            }
+            if (newType === 'storms') {
+                const mem = panel.memory.storms;
+                panel.basin = mem?.basin || panel.basin || 'all';
+            } else {
+                if (panel.basin) panel.memory.storms = { basin: panel.basin };
+                delete panel.basin;
+            }
             // Extended-hours: restore remembered toggle for the new type (if any),
             // or strip the flag when the new type doesn't support it.
             if (PANEL_TYPES[newType].supportsExtendedHours) {
@@ -3350,6 +3686,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
             delete panel._articles;
             delete panel._markets;
+            delete panel._events;
+            delete panel._eventsFailed;
+            delete panel._storms;
+            delete panel._stormsFailed;
             saveState();
             renderAllPanels();
             refreshAll();
@@ -3370,6 +3710,25 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const panel = state.panels[pid];
             if (!panel || panel.type !== 'heatmap') return;
             panel.sourcePanelId = sourcePanelId || null;
+            saveState();
+            renderAllPanels();
+        }
+
+        function setSeismicMinMag(pid, minMag) {
+            const panel = state.panels[pid];
+            if (!panel || panel.type !== 'seismic') return;
+            const mag = Number(minMag);
+            if (!Number.isFinite(mag) || panel.minMag === mag) return;
+            panel.minMag = mag;
+            saveState();
+            renderAllPanels();
+        }
+
+        function setStormBasin(pid, basin) {
+            const panel = state.panels[pid];
+            if (!panel || panel.type !== 'storms') return;
+            if (panel.basin === basin) return;
+            panel.basin = basin;
             saveState();
             renderAllPanels();
         }
