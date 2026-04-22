@@ -1682,32 +1682,50 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
         }
 
+        const NEWS_FRESH_WINDOW = 'when:7d';   // Google News RSS recency operator
+        const NEWS_MAX_AGE_MS   = 14 * 24 * 60 * 60 * 1000;  // 14d safety filter
+
         async function fetchNewsRSS(topic, count) {
             const cacheKey = `${topic}|${count}`;
             const cached = newsCache[cacheKey];
             if (cached && Date.now() - cached.ts < 60_000) return cached.articles;
 
             const topicObj = NEWS_TOPICS[topic] || { query: topic, label: topic };
-            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(topicObj.query)}&hl=en-US&gl=US&ceid=US:en`;
+            // Append Google News' when: operator so it returns only recent
+            // stories — without this, the RSS feed often leads with older
+            // "pillar" articles ranked by authority, not recency.
+            const q = `${topicObj.query} ${NEWS_FRESH_WINDOW}`;
+            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
             try {
                 const xml = await fetchViaProxy(rssUrl, { parseJson: false });
                 const doc = new DOMParser().parseFromString(xml, 'text/xml');
-                const items = Array.from(doc.querySelectorAll('item')).slice(0, count);
-                const articles = items.map(it => {
+                const items = Array.from(doc.querySelectorAll('item'));
+                const nowMs = Date.now();
+                const parsed = items.map(it => {
                     const title = it.querySelector('title')?.textContent?.trim() || '(untitled)';
                     const link  = it.querySelector('link')?.textContent?.trim() || '#';
                     const pub   = it.querySelector('pubDate')?.textContent?.trim();
                     const src   = it.querySelector('source')?.textContent?.trim() || extractSource(title);
+                    const pubMs = pub ? Date.parse(pub) : NaN;
                     return {
                         title: cleanHeadline(title, src),
                         source: src,
-                        publishedAt: pub ? new Date(pub).toISOString() : new Date().toISOString(),
+                        publishedAt: Number.isFinite(pubMs) ? new Date(pubMs).toISOString() : new Date().toISOString(),
+                        pubMs: Number.isFinite(pubMs) ? pubMs : nowMs,
                         url: link,
                     };
                 });
-                if (articles.length) {
-                    newsCache[cacheKey] = { articles, ts: Date.now() };
-                    return articles;
+                // Drop anything older than NEWS_MAX_AGE_MS — belt-and-braces
+                // in case Google ignores when: on a given query — then sort
+                // newest first and cap to the requested count.
+                const fresh = parsed
+                    .filter(a => nowMs - a.pubMs <= NEWS_MAX_AGE_MS)
+                    .sort((a, b) => b.pubMs - a.pubMs)
+                    .slice(0, count)
+                    .map(({ pubMs, ...rest }) => rest);
+                if (fresh.length) {
+                    newsCache[cacheKey] = { articles: fresh, ts: Date.now() };
+                    return fresh;
                 }
                 return [];
             } catch (err) {
