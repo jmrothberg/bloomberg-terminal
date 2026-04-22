@@ -467,6 +467,33 @@
             border: 1px dashed var(--border-color);
             padding: 2px 5px;
         }
+        .dd-price-ext {
+            flex-basis: 100%;
+            display: flex; align-items: baseline; gap: 10px;
+            margin-top: 2px;
+            font-variant-numeric: tabular-nums;
+        }
+        .dd-ext-price {
+            font-size: 15px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .dd-ext-time {
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+        .dd-session-tag {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 1px 5px;
+            border: 1px solid currentColor;
+            border-radius: 1px;
+        }
+        .dd-session-tag.ext {
+            color: #ffb300;
+            background: rgba(255, 179, 0, 0.08);
+        }
         .dd-pred-tile {
             display: inline-block;
             padding: 4px 10px;
@@ -1194,7 +1221,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (!result) return null;
                 const meta = result.meta || {};
                 const quote = result.indicators?.quote?.[0] || {};
-                const closeSeries = (quote.close || []).filter(v => v != null);
+                const closes = quote.close || [];
+                const closeSeries = closes.filter(v => v != null);
                 const timestamps = result.timestamp || [];
                 const regularPrice = meta.regularMarketPrice ?? closeSeries[closeSeries.length - 1] ?? null;
                 const previousClose = meta.chartPreviousClose ?? meta.previousClose ?? null;
@@ -1202,29 +1230,58 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const regularChange = regularPrice - previousClose;
                 const regularChangePercent = previousClose ? (regularChange / previousClose) * 100 : 0;
 
-                // Pre/post extended-hours fields (may be missing depending on asset/hour)
-                const preMarketPrice   = Number.isFinite(meta.preMarketPrice)   ? meta.preMarketPrice   : null;
-                const postMarketPrice  = Number.isFinite(meta.postMarketPrice)  ? meta.postMarketPrice  : null;
-                const preMarketChange  = preMarketPrice  != null ? (preMarketPrice  - regularPrice) : null;
-                const postMarketChange = postMarketPrice != null ? (postMarketPrice - regularPrice) : null;
-                const preMarketChangePercent  = preMarketChange  != null && regularPrice ? (preMarketChange  / regularPrice) * 100 : null;
-                const postMarketChangePercent = postMarketChange != null && regularPrice ? (postMarketChange / regularPrice) * 100 : null;
-
-                // Per-bar volumes: sum pre- and post-market buckets using tradingPeriods.
+                // Derive pre/post data + volumes from the bar series. Yahoo's
+                // chart-endpoint meta sometimes omits marketState / preMarketPrice
+                // / postMarketPrice (especially once we're past the POST window),
+                // so we can't rely on them. The bars plus currentTradingPeriod
+                // are always present when includePrePost=true.
                 const volumes = quote.volume || [];
                 const tp = meta.currentTradingPeriod || {};
                 const preWin  = tp.pre     ? [tp.pre.start,     tp.pre.end]     : null;
                 const postWin = tp.post    ? [tp.post.start,    tp.post.end]    : null;
                 const regWin  = tp.regular ? [tp.regular.start, tp.regular.end] : null;
                 let preVol = 0, postVol = 0, regVolFromBars = 0;
+                let lastPreClose = null, lastPreTime = null;
+                let lastPostClose = null, lastPostTime = null;
                 let preHas = false, postHas = false;
                 for (let i = 0; i < timestamps.length; i++) {
                     const t = timestamps[i];
                     const v = volumes[i];
-                    if (!Number.isFinite(v)) continue;
-                    if (preWin  && t >= preWin[0]  && t < preWin[1])  { preVol  += v; preHas  = true; }
-                    if (postWin && t >= postWin[0] && t < postWin[1]) { postVol += v; postHas = true; }
-                    if (regWin  && t >= regWin[0]  && t < regWin[1])  { regVolFromBars += v; }
+                    const c = closes[i];
+                    if (preWin && t >= preWin[0] && t < preWin[1]) {
+                        if (Number.isFinite(v)) { preVol += v; preHas = true; }
+                        if (c != null) { lastPreClose = c; lastPreTime = t; }
+                    } else if (postWin && t >= postWin[0] && t < postWin[1]) {
+                        if (Number.isFinite(v)) { postVol += v; postHas = true; }
+                        if (c != null) { lastPostClose = c; lastPostTime = t; }
+                    } else if (regWin && t >= regWin[0] && t < regWin[1]) {
+                        if (Number.isFinite(v)) regVolFromBars += v;
+                    }
+                }
+
+                // Pre-market quotes are relative to previous-day close; after-hours
+                // quotes are relative to today's regular close — matching how
+                // Yahoo displays them. Prefer meta fields when present, else
+                // use the last bar close in each window.
+                const preMarketPrice  = Number.isFinite(meta.preMarketPrice)  ? meta.preMarketPrice  : lastPreClose;
+                const postMarketPrice = Number.isFinite(meta.postMarketPrice) ? meta.postMarketPrice : lastPostClose;
+                const preMarketChange  = preMarketPrice  != null ? (preMarketPrice  - previousClose) : null;
+                const postMarketChange = postMarketPrice != null ? (postMarketPrice - regularPrice)  : null;
+                const preMarketChangePercent  = preMarketChange  != null && previousClose ? (preMarketChange  / previousClose) * 100 : null;
+                const postMarketChangePercent = postMarketChange != null && regularPrice  ? (postMarketChange / regularPrice)  * 100 : null;
+
+                // Derive marketState from tradingPeriod timestamps when meta
+                // doesn't provide it. Yahoo's values: PREPRE, PRE, REGULAR,
+                // POST, POSTPOST, CLOSED.
+                const now = Math.floor(Date.now() / 1000);
+                let marketState = meta.marketState || null;
+                if (!marketState) {
+                    if (regWin && now >= regWin[0] && now < regWin[1]) marketState = 'REGULAR';
+                    else if (preWin && now >= preWin[0] && now < preWin[1]) marketState = 'PRE';
+                    else if (postWin && now >= postWin[0] && now < postWin[1]) marketState = 'POST';
+                    else if (postWin && now >= postWin[1]) marketState = 'POSTPOST';
+                    else if (preWin && now < preWin[0]) marketState = 'PREPRE';
+                    else marketState = 'CLOSED';
                 }
 
                 return {
@@ -1237,7 +1294,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     regularChangePercent,
                     previousClose,
                     shortName: meta.shortName || meta.symbol || symbol,
-                    marketState: meta.marketState || null,
+                    marketState,
                     currency: meta.currency || null,
                     volume: meta.regularMarketVolume ?? (regVolFromBars || null),
                     dayHigh: meta.regularMarketDayHigh ?? null,
@@ -1249,8 +1306,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     postMarketPrice, postMarketChange, postMarketChangePercent,
                     preMarketVolume:  preHas  ? preVol  : null,
                     postMarketVolume: postHas ? postVol : null,
-                    preMarketTime:  meta.preMarketTime  ?? null,
-                    postMarketTime: meta.postMarketTime ?? null,
+                    preMarketTime:  meta.preMarketTime  ?? lastPreTime  ?? null,
+                    postMarketTime: meta.postMarketTime ?? lastPostTime ?? null,
                     closes: closeSeries,
                     timestamps,
                 };
@@ -2631,10 +2688,46 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const changeStr = pf === 'yield'
                 ? `${sign}${q.change.toFixed(3)} (${pctSign}${q.changePercent.toFixed(2)}%)`
                 : `${sign}${formatPriceFor(pf, q.change, true)} (${pctSign}${q.changePercent.toFixed(2)}%)`;
+
+            // Extended-hours row — show whichever of pre/post is more recent.
+            // Always surfaced in the drilldown regardless of any panel toggle.
+            let extHTML = '';
+            let extPrice = null, extChange = null, extPct = null, extTag = null, extTime = null;
+            const ms = (q.marketState || '').toUpperCase();
+            if (ms === 'PRE' && q.preMarketPrice != null) {
+                extPrice = q.preMarketPrice; extChange = q.preMarketChange; extPct = q.preMarketChangePercent; extTag = 'PRE'; extTime = q.preMarketTime;
+            } else if ((ms === 'POST' || ms === 'POSTPOST') && q.postMarketPrice != null) {
+                extPrice = q.postMarketPrice; extChange = q.postMarketChange; extPct = q.postMarketChangePercent; extTag = 'AH'; extTime = q.postMarketTime;
+            } else if (q.postMarketPrice != null && q.postMarketTime && q.preMarketTime && q.postMarketTime >= q.preMarketTime) {
+                extPrice = q.postMarketPrice; extChange = q.postMarketChange; extPct = q.postMarketChangePercent; extTag = 'AH'; extTime = q.postMarketTime;
+            } else if (q.preMarketPrice != null) {
+                extPrice = q.preMarketPrice; extChange = q.preMarketChange; extPct = q.preMarketChangePercent; extTag = 'PRE'; extTime = q.preMarketTime;
+            } else if (q.postMarketPrice != null) {
+                extPrice = q.postMarketPrice; extChange = q.postMarketChange; extPct = q.postMarketChangePercent; extTag = 'AH'; extTime = q.postMarketTime;
+            }
+            if (extPrice != null && extChange != null && extPct != null) {
+                const eCls = extChange > 0 ? 'positive' : extChange < 0 ? 'negative' : 'neutral';
+                const eSign = extChange >= 0 ? '+' : '';
+                const ePctSign = extPct >= 0 ? '+' : '';
+                const eChangeStr = `${eSign}${formatPriceFor(pf, extChange, true)} (${ePctSign}${extPct.toFixed(2)}%)`;
+                const timeStr = extTime
+                    ? ` <span class="dd-ext-time">as of ${new Date(extTime * 1000).toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</span>`
+                    : '';
+                extHTML = `
+                    <div class="dd-price-ext">
+                        <span class="dd-session-tag ext">${extTag}</span>
+                        <span class="dd-ext-price">${formatPriceFor(pf, extPrice)}</span>
+                        <span class="dd-change ${eCls}">${eChangeStr}</span>
+                        ${timeStr}
+                    </div>
+                `;
+            }
+
             el.innerHTML = `
                 <span class="dd-price">${formatPriceFor(pf, q.price)}</span>
                 <span class="dd-change ${cls}">${changeStr}</span>
                 ${q.marketState ? `<span class="dd-market-state">${escapeHTML(q.marketState)}</span>` : ''}
+                ${extHTML}
             `;
         }
 
