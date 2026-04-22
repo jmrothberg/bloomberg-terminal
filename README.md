@@ -66,7 +66,7 @@ The rules for adding more panel types: free CORS-friendly API, threshold that ma
 | **FOREX** | Currency pairs | `EURUSD=X USDJPY=X GBPUSD=X AUDUSD=X` |
 | **COMMODITIES** | Futures contracts | `CL=F GC=F SI=F NG=F HG=F` |
 | **TREASURIES** | US bond yields | `^IRX ^FVX ^TNX ^TYX` |
-| **NEWS** | Financial headlines by topic | Markets · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World · Chokepoints + custom |
+| **NEWS** | Financial headlines by topic | Markets · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World · Chokepoints · EIA (direct RSS) + custom |
 | **CALENDAR** | Upcoming US releases (macro + energy) with a `Macro / Energy / All` filter | Computed (CPI, NFP, FOMC, PCE, GDP + EIA WPSR / Nat Gas Storage / STEO) |
 | **MOVERS** | Derived top gainers/losers, VIX, sentiment | From loaded quotes |
 | **PREDICTION MARKETS** | Live Polymarket markets ranked by 24h volume | Filter: All · Politics · Crypto · Sports · Elections · Economics |
@@ -128,15 +128,25 @@ Complementing the structured feeds above, `NEWS` gains a **Chokepoints** topic p
 
 Both structured feeds refresh on the same 60s tick as quotes and news.
 
-### Energy releases (EIA — calendar-only, no API key)
+### EIA integration
 
-`CALENDAR` panels gain a `Macro · Energy · All` chip filter in the tray. The `Energy` view lists upcoming EIA releases computed client-side — no API key, no registration:
+The terminal touches EIA in two places, with very different levels of "integration":
+
+#### Release schedule (dates only — **no API calls**)
+
+`CALENDAR` panels gain a `Macro · Energy · All` chip filter in the tray. Under `Energy` you see three EIA releases whose dates are **computed client-side from weekday math** — the code knows that WPSR is always Wednesday and Nat Gas Storage is always Thursday; it never fetches anything from EIA to build the list. These are baked-in schedule rules, not a data source.
 
 - **Weekly Petroleum Status Report (WPSR)** — every Wednesday 10:30 ET. Crude + gasoline + distillate stocks. Moves `CL=F` and `RB=F` ~2% on surprise; `XLE` constituents track closely.
 - **Weekly Natural Gas Storage** — every Thursday 10:30 ET. Working gas in underground storage. Moves `NG=F` 3–5% on winter / summer surprises.
 - **Short-Term Energy Outlook (STEO)** — 2nd Tuesday monthly. Absorbed the Drilling Productivity Report in June 2024, so one entry covers both.
 
-Live EIA data (inventory levels, storage volumes, retail prices) is **explicitly not wired** because the v2 API requires a per-user key, which would break the terminal's no-keys promise. The calendar tells you *when* the release is coming; pair it with the broadened `Energy` news preset (which now matches `WPSR · refinery · EIA · inventory` as well as the baseline oil/gas query) for headlines that contextualize the number.
+Live EIA **numeric** data (actual inventory levels, storage volumes, retail prices) is **explicitly not wired**. The v2 API at `api.eia.gov` requires a per-user API key, which would break the terminal's no-keys promise; routing keyed URLs through the public CORS proxy rotation would also leak those keys to the proxy operator.
+
+#### EIA Today in Energy (real RSS fetch via proxy)
+
+`NEWS` panels gain an **EIA** topic chip that pulls [EIA's Today in Energy RSS feed](https://www.eia.gov/rss/todayinenergy.xml) directly. This is a **genuine EIA integration** — it fetches EIA's own editorial analysis feed through the existing CORS-proxy rotation (same plumbing as Google News RSS), so every article is EIA-authored. Use this alongside the release calendar: the calendar tells you *when* a WPSR or Nat Gas print is coming, Today in Energy gives you EIA's own write-up of the previous prints and the surrounding market context. No API key required.
+
+The broader `Energy` chip remains a curated Google-News search (`crude oil OPEC natural gas refinery gasoline diesel WPSR EIA inventory`) if you want a wider net that includes Reuters / Bloomberg / CNBC coverage.
 
 ### Extended hours (pre-market / after-hours)
 
@@ -227,8 +237,8 @@ Every number on the screen is from one of these free, public sources. No API key
 | Stocks / Indices / Commodities / Bonds | [Yahoo Finance chart endpoint](https://query1.finance.yahoo.com/v8/finance/chart/) | Proxy rotation: allorigins → codetabs → corsproxy | Yahoo has no CORS header, so a public proxy is needed |
 | Ticker search / autocomplete | Yahoo Finance search endpoint (via proxy) | — | |
 | News | [Google News RSS](https://news.google.com/rss/search) (via proxy) | — | RSS parsed with `DOMParser` |
-| Economic calendar (macro) | Computed from US release schedule | — | CPI, NFP, FOMC 2026, PCE, GDP etc. derived from date math + known FOMC dates |
-| Energy calendar | Computed from EIA release schedule | — | WPSR every Wed 10:30 ET, Natural Gas Storage every Thu 10:30 ET, STEO 2nd Tuesday monthly. No API key — dates only. |
+| Economic calendar (macro + energy schedule) | Computed client-side from US release schedule | — | CPI, NFP, FOMC 2026, PCE, GDP + WPSR / Nat Gas Storage / STEO weekday math — schedule only, **no API calls** |
+| EIA Today in Energy | [`https://www.eia.gov/rss/todayinenergy.xml`](https://www.eia.gov/rss/todayinenergy.xml) (via proxy) | — | Real RSS fetch of EIA's editorial analysis feed via the same proxy rotation as Google News |
 | Movers / VIX / Fear-Greed | Derived locally from loaded quotes | — | No network call — free reduction |
 | Prediction markets list | [Polymarket Gamma API](https://docs.polymarket.com/api-reference/introduction) (via proxy) | — | Gamma has no CORS header; same proxy rotation as Yahoo |
 | Prediction history chart | [Polymarket CLOB](https://docs.polymarket.com/api-reference/clob) `prices-history` | — | CLOB is CORS-open — direct fetch, no proxy |
