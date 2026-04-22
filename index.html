@@ -1239,12 +1239,15 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         // body when rate-limited, which would otherwise pin that proxy as `currentProxy` and
         // starve subsequent calls. Detect and reject those degenerate bodies before committing.
         async function fetchViaProxy(url, { parseJson = true, signal = null } = {}) {
+            // Cache-bust the inner URL so neither the CORS proxy nor the browser HTTP
+            // cache serves a stale response. Yahoo/Polymarket/RSS ignore unknown params.
+            const bustedUrl = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
             let lastErr = null;
             for (let attempt = 0; attempt < PROXIES.length; attempt++) {
                 const proxyIdx = (currentProxy + attempt) % PROXIES.length;
-                const proxied = PROXIES[proxyIdx](url);
+                const proxied = PROXIES[proxyIdx](bustedUrl);
                 try {
-                    const res = await fetch(proxied, { signal });
+                    const res = await fetch(proxied, { signal, cache: 'no-store' });
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
                     const text = await res.text();
                     if (!text) throw new Error('Empty body');
@@ -1395,8 +1398,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const id = CG_MAP[symbol];
             if (!id) return null;
             try {
-                const url = `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`;
-                const res = await fetch(url);
+                const url = `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true&_t=${Date.now()}`;
+                const res = await fetch(url, { cache: 'no-store' });
                 if (!res.ok) return null;
                 const j = await res.json();
                 const row = j[id];
@@ -1431,8 +1434,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (!m) return null;
             const [, base, quote] = m;
             try {
-                const url = `https://open.er-api.com/v6/latest/${base}`;
-                const res = await fetch(url);
+                const url = `https://open.er-api.com/v6/latest/${base}?_t=${Date.now()}`;
+                const res = await fetch(url, { cache: 'no-store' });
                 if (!res.ok) return null;
                 const j = await res.json();
                 const rate = j.rates?.[quote];
@@ -1836,6 +1839,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             try {
                 await Promise.all([refreshQuotes(), refreshNewsPanels(), refreshPredictionPanels()]);
                 renderAllPanels();
+                if (currentDrilldown && currentDrilldown.kind === 'ticker') {
+                    renderDrilldownPrice(currentDrilldown.symbol);
+                }
                 updateStatus('CONNECTED', 'normal');
                 updateTimestamps();
                 updateMarketStatus();
@@ -1843,6 +1849,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 console.error('refresh error:', err);
                 updateStatus('CONNECTION ERROR', 'error');
                 renderAllPanels();
+                if (currentDrilldown && currentDrilldown.kind === 'ticker') {
+                    renderDrilldownPrice(currentDrilldown.symbol);
+                }
             } finally {
                 isRefreshing = false;
                 if (btn) btn.disabled = false;
