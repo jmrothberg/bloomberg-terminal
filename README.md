@@ -1,10 +1,10 @@
-# JMR's Bloomberg Terminal
+# JMR's Rothberg Terminal
 
 A single-file, browser-only clone of the Bloomberg Terminal — phosphor-green monospace, dense data panels, pull-down configuration — powered entirely by **free, public data sources**. No API keys. No backend. No build step.
 
-## ► [LAUNCH THE TERMINAL →](https://jmrothberg.github.io/bloomberg-terminal/)
+## ► [LAUNCH THE TERMINAL →](https://jmrothberg.github.io/rothberg-terminal/)
 
-[![JMR's Bloomberg Terminal](JMRs_Bloomberg.png)](https://jmrothberg.github.io/bloomberg-terminal/)
+[![JMR's Rothberg Terminal](JMRs_Bloomberg.png)](https://jmrothberg.github.io/rothberg-terminal/)
 
 > Click the screenshot or the launch link above to open the live terminal in your browser. No install, no signup, no keys.
 
@@ -173,15 +173,15 @@ Your panel layout, assignments, symbols, and news topic are saved to `localStora
 
 Just open the demo link — no install, no setup:
 
-### 🟢 **[► https://jmrothberg.github.io/bloomberg-terminal/ ◄](https://jmrothberg.github.io/bloomberg-terminal/)**
+### 🟢 **[► https://jmrothberg.github.io/rothberg-terminal/ ◄](https://jmrothberg.github.io/rothberg-terminal/)**
 
 ### Option B — Run locally
 
 Clone and open in a browser:
 
 ```bash
-git clone https://github.com/jmrothberg/bloomberg-terminal.git
-cd bloomberg-terminal
+git clone https://github.com/jmrothberg/rothberg-terminal.git
+cd rothberg-terminal
 open index.html
 ```
 
@@ -324,7 +324,7 @@ location.reload();
 ## Project structure
 
 ```
-bloomberg-terminal/
+rothberg-terminal/
 ├── index.html        # The entire app (HTML + CSS + JS in one file)
 ├── SPEC.md           # Original design spec (aesthetic, layout, color palette)
 ├── README.md         # This file
