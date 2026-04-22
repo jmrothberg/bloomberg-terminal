@@ -847,6 +847,9 @@
                 <div class="header-subtitle" id="headerSubtitle">[ FREE DATA · CORE MARKETS ]</div>
             </div>
             <div class="header-right">
+                <button class="header-btn" onclick="exportState()" title="Download current layout as JSON">[EXPORT]</button>
+                <button class="header-btn" onclick="document.getElementById('importFile').click()" title="Load a layout from a JSON file">[IMPORT]</button>
+                <input id="importFile" type="file" accept="application/json,.json" style="display:none" onchange="importState(this.files[0])">
                 <button class="header-btn" onclick="toggleHelp()">[HELP]</button>
                 <div class="header-time" id="headerTime">--:--:-- EST</div>
             </div>
@@ -1181,6 +1184,48 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
             } catch (e) {
                 console.warn('saveState failed:', e);
+            }
+        }
+
+        function exportState() {
+            const payload = {
+                schema: STORAGE_KEY,
+                exportedAt: new Date().toISOString(),
+                state
+            };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            a.href = url;
+            a.download = `bloomberg-layout-${stamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function importState(file) {
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const parsed = JSON.parse(text);
+                const incoming = parsed?.state && parsed?.schema === STORAGE_KEY
+                    ? parsed.state
+                    : (parsed?.panels && parsed?.layout ? parsed : null);
+                if (!incoming || !incoming.panels || !incoming.layout) {
+                    alert('Import failed — file does not look like a Bloomberg layout export.');
+                    return;
+                }
+                if (!confirm('Replace current layout with imported one? Your current layout will be overwritten.')) return;
+                state = mergeState(structuredClone(DEFAULT_STATE), incoming);
+                saveState();
+                renderAllPanels();
+                refreshAll();
+            } catch (e) {
+                alert('Import failed — could not parse JSON: ' + e.message);
+            } finally {
+                document.getElementById('importFile').value = '';
             }
         }
 
@@ -1885,6 +1930,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         <span class="tray-tag-x" onclick="removeSymbol('${pid}','${escapeAttr(sym)}')">[×]</span>
                     </span>
                 `).join('');
+                const sort = panel.sort || { key: null, dir: null };
+                const symLabel = sort.key === 'symbol' ? (sort.dir === 'desc' ? 'Z→A' : 'A→Z') : 'A↕Z';
+                const pctLabel = sort.key === 'change' ? (sort.dir === 'desc' ? '% HIGH→LOW' : '% LOW→HIGH') : '% ↕';
+                const symActive = sort.key === 'symbol' ? ' active' : '';
+                const pctActive = sort.key === 'change' ? ' active' : '';
+                const noneActive = !sort.key ? ' active' : '';
                 symbolSection = `
                     <div class="tray-row">
                         <span class="tray-label">ADD</span>
@@ -1901,6 +1952,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     <div class="tray-row">
                         <span class="tray-label">LOADED</span>
                         <div class="tray-tags" id="tags-${pid}">${tags || '<span class="no-data">(none)</span>'}</div>
+                    </div>
+                    <div class="tray-row">
+                        <span class="tray-label">SORT</span>
+                        <button class="chip${noneActive}" onclick="cyclePanelSort('${pid}','none')" title="Entered order">ENTERED</button>
+                        <button class="chip${symActive}" onclick="cyclePanelSort('${pid}','symbol')" title="Click to cycle A→Z / Z→A">${symLabel}</button>
+                        <button class="chip${pctActive}" onclick="cyclePanelSort('${pid}','change')" title="Click to cycle high→low / low→high">${pctLabel}</button>
                     </div>
                     <div class="tray-msg" id="msg-${pid}"></div>
                 `;
@@ -2074,10 +2131,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         }
 
         function renderQuoteTable(panel) {
-            const symbols = panel.symbols || [];
-            if (!symbols.length) {
+            if (!(panel.symbols || []).length) {
                 return `<div class="no-data">No symbols. Click title and type one to add.</div>`;
             }
+            const symbols = sortedSymbolsFor(panel);
             const priceFormat = PANEL_TYPES[panel.type].priceFormat;
             const rows = symbols.map(sym => {
                 const q = quoteCache[sym];
@@ -3297,6 +3354,50 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             panel.extendedHours = !panel.extendedHours;
             saveState();
             renderAllPanels();
+        }
+
+        // Cycle a panel's sort. Same key clicked twice flips direction.
+        // 'none' key clears the sort (back to entered order).
+        function cyclePanelSort(pid, key) {
+            const panel = state.panels[pid];
+            if (!panel) return;
+            const cur = panel.sort || { key: null, dir: null };
+            let next;
+            if (key === 'none') {
+                next = { key: null, dir: null };
+            } else if (cur.key !== key) {
+                next = { key, dir: key === 'change' ? 'desc' : 'asc' };
+            } else {
+                next = { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
+            }
+            panel.sort = next;
+            saveState();
+            renderAllPanels();
+        }
+
+        // Returns a new array of symbols in sorted order for display. Does
+        // not mutate panel.symbols — the stored order is the user's entered
+        // order and must be preserved for the ENTERED sort mode.
+        function sortedSymbolsFor(panel) {
+            const symbols = (panel.symbols || []).slice();
+            const sort = panel.sort;
+            if (!sort || !sort.key) return symbols;
+            const dir = sort.dir === 'desc' ? -1 : 1;
+            if (sort.key === 'symbol') {
+                symbols.sort((a, b) => a.localeCompare(b) * dir);
+            } else if (sort.key === 'change') {
+                symbols.sort((a, b) => {
+                    const qa = quoteCache[a], qb = quoteCache[b];
+                    const va = qa ? resolveQuoteView(qa, panel).changePercent : null;
+                    const vb = qb ? resolveQuoteView(qb, panel).changePercent : null;
+                    // Rows with no quote yet sink to the bottom.
+                    if (va == null && vb == null) return 0;
+                    if (va == null) return 1;
+                    if (vb == null) return -1;
+                    return (va - vb) * dir;
+                });
+            }
+            return symbols;
         }
 
         async function addSymbolToPanel(pid, raw) {
