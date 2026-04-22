@@ -482,6 +482,11 @@
             font-size: 10px;
             color: var(--text-dim);
         }
+        .dd-ext-vol {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
         .dd-session-tag {
             font-size: 9px;
             font-weight: 700;
@@ -1214,7 +1219,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
         async function fetchQuote(symbol) {
             const encoded = encodeURIComponent(symbol);
-            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=5m&range=1d&includePrePost=true`;
+            // 1m bars — 5m bars zero-out pre/post volume in Yahoo's feed.
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?interval=1m&range=1d&includePrePost=true`;
             try {
                 const data = await fetchViaProxy(url);
                 const result = data?.chart?.result?.[0];
@@ -1849,8 +1855,15 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 return ` <span style="color:var(--text-secondary);font-weight:400;">· ${f ? f.label : panel.filter}</span>`;
             }
             if (panel.type === 'heatmap' && panel.sourcePanelId) {
-                const src = state.panels[panel.sourcePanelId];
-                if (src) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${PANEL_TYPES[src.type].label}</span>`;
+                const sid = panel.sourcePanelId;
+                if (typeof sid === 'string' && sid.startsWith('default:')) {
+                    const t = sid.slice('default:'.length);
+                    const label = PANEL_TYPES[t]?.label;
+                    if (label) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${label} (DEFAULT)</span>`;
+                } else {
+                    const src = state.panels[sid];
+                    if (src) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${PANEL_TYPES[src.type].label}</span>`;
+                }
             }
             return extTag;
         }
@@ -1930,19 +1943,34 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
             let heatmapSection = '';
             if (panel.type === 'heatmap') {
-                const sourceOptions = state.layout
-                    .filter(id => PANEL_TYPES[state.panels[id]?.type]?.usesSymbols)
-                    .map(id => {
-                        const p = state.panels[id];
-                        const selected = panel.sourcePanelId === id ? ' selected' : '';
-                        return `<option value="${id}"${selected}>${PANEL_TYPES[p.type].label}</option>`;
-                    }).join('');
+                // List live symbol panels first, then synthetic default-list
+                // options for every symbol-bearing type that has no live panel
+                // — so WATCHLIST is always selectable even if the user's only
+                // stocks panel was converted to heatmap.
+                const liveOptions = [];
+                const typesSeen = new Set();
+                for (const id of state.layout) {
+                    const p = state.panels[id];
+                    if (!p || !PANEL_TYPES[p.type]?.usesSymbols) continue;
+                    const selected = panel.sourcePanelId === id ? ' selected' : '';
+                    liveOptions.push(`<option value="${id}"${selected}>${PANEL_TYPES[p.type].label}</option>`);
+                    typesSeen.add(p.type);
+                }
+                const defaultOptions = [];
+                for (const t of PANEL_TYPE_ORDER) {
+                    if (!PANEL_TYPES[t].usesSymbols) continue;
+                    if (typesSeen.has(t)) continue;
+                    const val = `default:${t}`;
+                    const selected = panel.sourcePanelId === val ? ' selected' : '';
+                    defaultOptions.push(`<option value="${val}"${selected}>${PANEL_TYPES[t].label} (default)</option>`);
+                }
                 heatmapSection = `
                     <div class="tray-row">
                         <span class="tray-label">SOURCE</span>
                         <select class="tray-select" onchange="setHeatmapSource('${pid}', this.value)">
                             <option value="">(pick panel)</option>
-                            ${sourceOptions}
+                            ${liveOptions.join('')}
+                            ${defaultOptions.join('')}
                         </select>
                     </div>
                 `;
@@ -2105,14 +2133,28 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
         function renderHeatMap(panel) {
             const srcId = panel.sourcePanelId;
-            if (!srcId || !state.panels[srcId]) {
+            if (!srcId) {
                 return `<div class="no-data">Pick a source panel in the tray (SOURCE).</div>`;
             }
-            const src = state.panels[srcId];
-            if (!PANEL_TYPES[src.type]?.usesSymbols) {
-                return `<div class="no-data">Source panel is not a symbol panel.</div>`;
+            // Synthetic "default:stocks" etc. — use built-in default symbols
+            // for that type when no live panel of that type exists.
+            let symbols;
+            if (typeof srcId === 'string' && srcId.startsWith('default:')) {
+                const t = srcId.slice('default:'.length);
+                if (!PANEL_TYPES[t]?.usesSymbols) {
+                    return `<div class="no-data">Unknown default symbol set.</div>`;
+                }
+                symbols = (DEFAULT_SYMBOLS[t] || []).slice();
+            } else {
+                const src = state.panels[srcId];
+                if (!src) {
+                    return `<div class="no-data">Source panel no longer exists — pick another.</div>`;
+                }
+                if (!PANEL_TYPES[src.type]?.usesSymbols) {
+                    return `<div class="no-data">Source panel is not a symbol panel.</div>`;
+                }
+                symbols = (src.symbols || []).slice();
             }
-            const symbols = (src.symbols || []).slice();
             if (!symbols.length) {
                 return `<div class="no-data">Source panel has no symbols.</div>`;
             }
@@ -2699,39 +2741,34 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 ? `${sign}${q.change.toFixed(3)} (${pctSign}${q.changePercent.toFixed(2)}%)`
                 : `${sign}${formatPriceFor(pf, q.change, true)} (${pctSign}${q.changePercent.toFixed(2)}%)`;
 
-            // Extended-hours row — show whichever of pre/post is more recent.
-            // Always surfaced in the drilldown regardless of any panel toggle.
-            let extHTML = '';
-            let extPrice = null, extChange = null, extPct = null, extTag = null, extTime = null;
-            const ms = (q.marketState || '').toUpperCase();
-            if (ms === 'PRE' && q.preMarketPrice != null) {
-                extPrice = q.preMarketPrice; extChange = q.preMarketChange; extPct = q.preMarketChangePercent; extTag = 'PRE'; extTime = q.preMarketTime;
-            } else if ((ms === 'POST' || ms === 'POSTPOST') && q.postMarketPrice != null) {
-                extPrice = q.postMarketPrice; extChange = q.postMarketChange; extPct = q.postMarketChangePercent; extTag = 'AH'; extTime = q.postMarketTime;
-            } else if (q.postMarketPrice != null && q.postMarketTime && q.preMarketTime && q.postMarketTime >= q.preMarketTime) {
-                extPrice = q.postMarketPrice; extChange = q.postMarketChange; extPct = q.postMarketChangePercent; extTag = 'AH'; extTime = q.postMarketTime;
-            } else if (q.preMarketPrice != null) {
-                extPrice = q.preMarketPrice; extChange = q.preMarketChange; extPct = q.preMarketChangePercent; extTag = 'PRE'; extTime = q.preMarketTime;
-            } else if (q.postMarketPrice != null) {
-                extPrice = q.postMarketPrice; extChange = q.postMarketChange; extPct = q.postMarketChangePercent; extTag = 'AH'; extTime = q.postMarketTime;
-            }
-            if (extPrice != null && extChange != null && extPct != null) {
-                const eCls = extChange > 0 ? 'positive' : extChange < 0 ? 'negative' : 'neutral';
-                const eSign = extChange >= 0 ? '+' : '';
-                const ePctSign = extPct >= 0 ? '+' : '';
-                const eChangeStr = `${eSign}${formatPriceFor(pf, extChange, true)} (${ePctSign}${extPct.toFixed(2)}%)`;
-                const timeStr = extTime
-                    ? ` <span class="dd-ext-time">as of ${new Date(extTime * 1000).toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</span>`
-                    : '';
-                extHTML = `
+            // Extended-hours rows — show BOTH pre and post lines when present
+            // so users always see today's full picture (price, change, volume,
+            // time). Each row is always rendered regardless of any panel toggle.
+            const fmtTime = t => t
+                ? new Date(t * 1000).toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })
+                : '';
+            const buildExtRow = (tag, price, change, pct, vol, time) => {
+                if (price == null || change == null || pct == null) return '';
+                const eCls = change > 0 ? 'positive' : change < 0 ? 'negative' : 'neutral';
+                const eSign = change >= 0 ? '+' : '';
+                const ePctSign = pct >= 0 ? '+' : '';
+                const eChangeStr = `${eSign}${formatPriceFor(pf, change, true)} (${ePctSign}${pct.toFixed(2)}%)`;
+                const volStr = formatVolume(vol);
+                const volHTML = volStr ? `<span class="dd-ext-vol">VOL ${volStr}</span>` : '';
+                const timeHTML = time ? `<span class="dd-ext-time">as of ${fmtTime(time)}</span>` : '';
+                return `
                     <div class="dd-price-ext">
-                        <span class="dd-session-tag ext">${extTag}</span>
-                        <span class="dd-ext-price">${formatPriceFor(pf, extPrice)}</span>
+                        <span class="dd-session-tag ext">${tag}</span>
+                        <span class="dd-ext-price">${formatPriceFor(pf, price)}</span>
                         <span class="dd-change ${eCls}">${eChangeStr}</span>
-                        ${timeStr}
+                        ${volHTML}
+                        ${timeHTML}
                     </div>
                 `;
-            }
+            };
+            const extHTML =
+                buildExtRow('PRE', q.preMarketPrice, q.preMarketChange, q.preMarketChangePercent, q.preMarketVolume, q.preMarketTime) +
+                buildExtRow('AH',  q.postMarketPrice, q.postMarketChange, q.postMarketChangePercent, q.postMarketVolume, q.postMarketTime);
 
             el.innerHTML = `
                 <span class="dd-price">${formatPriceFor(pf, q.price)}</span>
@@ -2836,7 +2873,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
 
             // Session dividers (1D view with includePrePost): dashed vertical
-            // lines at market open and close, with PRE / REG / AH labels.
+            // lines at market open and close, with PRE / REG / AH labels and
+            // the actual clock time printed under each divider so a reader
+            // can verify the lines land where the bar data says they should.
             let sessionLines = '';
             if (sessionWindows && sessionWindows.regular && ts.length >= 2) {
                 const tStart = ts[0], tEnd = ts[ts.length - 1];
@@ -2844,10 +2883,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const xFor = (t) => padL + ((t - tStart) / tSpan) * innerW;
                 const openT  = sessionWindows.regular.start;
                 const closeT = sessionWindows.regular.end;
+                const fmtClock = (t) => new Date(t * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
                 const drawDivider = (t) => {
                     if (t <= tStart || t >= tEnd) return '';
                     const x = xFor(t).toFixed(1);
-                    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + innerH}" stroke="var(--text-dim)" stroke-dasharray="2,3" stroke-width="0.8"/>`;
+                    return `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + innerH}" stroke="var(--text-dim)" stroke-dasharray="2,3" stroke-width="0.8"/>
+                        <text x="${x}" y="${padT + innerH + 12}" text-anchor="middle" fill="var(--text-dim)" font-size="9" font-family="IBM Plex Mono, monospace">${fmtClock(t)}</text>`;
                 };
                 sessionLines += drawDivider(openT);
                 sessionLines += drawDivider(closeT);
