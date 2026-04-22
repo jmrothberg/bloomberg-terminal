@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JMR's Bloomberg Terminal</title>
-    <meta name="description" content="A free, single-file Bloomberg Terminal clone — phosphor green on black, live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
-    <meta property="og:title" content="JMR's Bloomberg Terminal">
-    <meta property="og:description" content="Free, browser-only Bloomberg Terminal clone — live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
-    <meta property="og:image" content="https://jmrothberg.github.io/bloomberg-terminal/JMRs_Bloomberg.png">
-    <meta property="og:url" content="https://jmrothberg.github.io/bloomberg-terminal/">
+    <title>JMR's Rothberg Terminal</title>
+    <meta name="description" content="A free, single-file Rothberg Terminal: a browser-only Bloomberg-style dashboard — phosphor green on black, live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
+    <meta property="og:title" content="JMR's Rothberg Terminal">
+    <meta property="og:description" content="Free, browser-only Rothberg Terminal — live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
+    <meta property="og:image" content="https://jmrothberg.github.io/rothberg-terminal/JMRs_Bloomberg.png">
+    <meta property="og:url" content="https://jmrothberg.github.io/rothberg-terminal/">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="JMR's Bloomberg Terminal">
-    <meta name="twitter:description" content="Free, browser-only Bloomberg Terminal clone — live stocks, indices, crypto, forex, commodities, bonds, news, and movers.">
-    <meta name="twitter:image" content="https://jmrothberg.github.io/bloomberg-terminal/JMRs_Bloomberg.png">
+    <meta name="twitter:title" content="JMR's Rothberg Terminal">
+    <meta name="twitter:description" content="Free, browser-only Rothberg Terminal — live stocks, indices, crypto, forex, commodities, bonds, news, and movers.">
+    <meta name="twitter:image" content="https://jmrothberg.github.io/rothberg-terminal/JMRs_Bloomberg.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -891,7 +891,7 @@
     <div class="terminal">
         <div class="header">
             <div>
-                <div class="header-title">Rothberg Terminal v1.1</div>
+                <div class="header-title">ROTHBERG TERMINAL v1.1</div>
                 <div class="header-subtitle" id="headerSubtitle">[ FREE DATA · CORE MARKETS ]</div>
             </div>
             <div class="header-right">
@@ -1395,7 +1395,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const a = document.createElement('a');
             const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             a.href = url;
-            a.download = `bloomberg-layout-${stamp}.json`;
+            a.download = `rothberg-layout-${stamp}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1411,7 +1411,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     ? parsed.state
                     : (parsed?.panels && parsed?.layout ? parsed : null);
                 if (!incoming || !incoming.panels || !incoming.layout) {
-                    alert('Import failed — file does not look like a Bloomberg layout export.');
+                    alert('Import failed — file does not look like a Rothberg Terminal layout export.');
                     return;
                 }
                 if (!confirm('Replace current layout with imported one? Your current layout will be overwritten.')) return;
