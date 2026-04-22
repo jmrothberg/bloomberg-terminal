@@ -45,7 +45,7 @@ A single-file, browser-only clone of the Bloomberg Terminal — phosphor-green m
 
 ## Features
 
-### Nine panel types — reassign any panel to any type
+### Eleven panel types — reassign any panel to any type
 
 | Type | What it shows | Default symbols |
 |---|---|---|
@@ -58,6 +58,8 @@ A single-file, browser-only clone of the Bloomberg Terminal — phosphor-green m
 | **NEWS** | Financial headlines by topic | Markets · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World + custom |
 | **CALENDAR** | Upcoming US economic releases | Computed (CPI, NFP, FOMC, PCE, GDP…) |
 | **MOVERS** | Derived top gainers/losers, VIX, sentiment | From loaded quotes |
+| **PREDICTION MARKETS** | Live Polymarket markets ranked by 24h volume | Filter: All · Politics · Crypto · Sports · Elections · Economics |
+| **HEAT MAP** | Bloomberg-HMAP-style sector-weighted treemap | Source: any symbol panel |
 
 ### Per-row extras
 
@@ -75,6 +77,19 @@ Click any equity/index/crypto/commodity/forex/bond row to open a full-screen dri
 - **`[×]`** or **`ESC`** closes the drilldown
 
 Data sourced from Yahoo's crumb-free `fundamentals-timeseries` and `v1/search` endpoints (no key required).
+
+### Prediction markets (Polymarket)
+
+The `PREDICTION MARKETS` panel lists the top 20 active Polymarket markets by 24-hour volume, with YES/NO probability bars, volume, and days-to-resolution. Click any row for a full-screen drilldown:
+
+- **Probability history chart** — 1H · 6H · 1D · 1W · 1M · MAX (data from Polymarket's CORS-open CLOB endpoint)
+- **Market stats grid** — 24h vol, total vol, liquidity, bid/ask, spread, 1W / 1M change, resolution date, days left
+- **Full market description** + link to Polymarket
+- **Related news** — Google News RSS searched on the market question
+
+### Heat map (HMAP-style)
+
+The `HEAT MAP` panel renders a squarified treemap of another panel's symbols — tiles sized by market cap, colored on a diverging red↔green ramp by day change, grouped into sector buckets. Pick the source panel from the tray's SOURCE dropdown. Click any tile to open the ticker drilldown. Sector data is hydrated progressively from Yahoo's fundamentals endpoint; first paint uses equal-weighted `UNCLASSIFIED` tiles and re-lays out as sectors resolve.
 
 ### Interactions
 
@@ -163,6 +178,9 @@ Every number on the screen is from one of these free, public sources. No API key
 | News | [Google News RSS](https://news.google.com/rss/search) (via proxy) | — | RSS parsed with `DOMParser` |
 | Economic calendar | Computed from US release schedule | — | CPI, NFP, FOMC 2026, PCE, GDP etc. derived from date math + known FOMC dates |
 | Movers / VIX / Fear-Greed | Derived locally from loaded quotes | — | No network call — free reduction |
+| Prediction markets list | [Polymarket Gamma API](https://docs.polymarket.com/api-reference/introduction) (via proxy) | — | Gamma has no CORS header; same proxy rotation as Yahoo |
+| Prediction history chart | [Polymarket CLOB](https://docs.polymarket.com/api-reference/clob) `prices-history` | — | CLOB is CORS-open — direct fetch, no proxy |
+| Heat map sectors / market caps | Yahoo `fundamentals-timeseries` + `v1/search` | — | Same crumb-free endpoints as drilldown |
 
 ### CORS proxies tried in order
 

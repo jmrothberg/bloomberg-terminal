@@ -434,6 +434,18 @@
             border: 1px dashed var(--border-color);
             padding: 2px 5px;
         }
+        .dd-pred-tile {
+            display: inline-block;
+            padding: 4px 10px;
+            border: 1px solid var(--border-color);
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+        }
+        .dd-pred-tile.positive { color: var(--color-positive); border-color: var(--color-positive); }
+        .dd-pred-tile.negative { color: var(--color-negative); border-color: var(--color-negative); }
         .drilldown-ranges {
             display: flex; gap: 6px; flex-wrap: wrap;
             padding: 6px 0 10px;
@@ -519,6 +531,96 @@
         }
 
         .news-headline a:hover { text-decoration: underline; }
+
+        .pred-row {
+            padding: 6px 4px;
+            border-bottom: 1px dashed var(--border-color);
+            cursor: pointer;
+        }
+        .pred-row:last-child { border-bottom: none; }
+        .pred-row:hover { background: var(--highlight); }
+
+        .pred-question {
+            font-size: 11px;
+            line-height: 1.3;
+            color: var(--text-primary);
+            margin-bottom: 3px;
+        }
+        .pred-bars {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+            flex-wrap: wrap;
+        }
+        .pred-bar-label { color: var(--text-dim); }
+        .pred-bar-pct { min-width: 32px; text-align: right; }
+        .pred-bar-spacer { width: 8px; }
+        .prob-bar {
+            font-family: inherit;
+            letter-spacing: 0;
+            color: var(--text-primary);
+        }
+        .prob-bar-no { color: var(--text-negative); }
+        .pred-meta {
+            font-size: 9px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .tray-select {
+            background: var(--panel-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 2px 4px;
+            font-family: inherit;
+            font-size: 10px;
+        }
+
+        .hm-wrap {
+            position: relative;
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+        .hm-tile {
+            position: absolute;
+            box-sizing: border-box;
+            border: 1px solid rgba(0,0,0,0.4);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            line-height: 1.1;
+            cursor: pointer;
+            overflow: hidden;
+            padding: 2px;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 0 2px rgba(0,0,0,0.8);
+        }
+        .hm-tile:hover {
+            outline: 1px solid var(--text-accent);
+            outline-offset: -1px;
+        }
+        .hm-sym { font-weight: 500; letter-spacing: 0.3px; }
+        .hm-pct { font-size: 9px; opacity: 0.95; }
+        .hm-sector-hdr {
+            position: absolute;
+            font-size: 9px;
+            letter-spacing: 0.8px;
+            color: var(--text-accent);
+            background: rgba(0,0,0,0.55);
+            padding: 2px 4px;
+            box-sizing: border-box;
+            overflow: hidden;
+            white-space: nowrap;
+            z-index: 1;
+            pointer-events: none;
+        }
 
         .cal-item {
             display: grid;
@@ -822,9 +924,20 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             news:        { label: 'NEWS',                usesSymbols: false, usesNews: true },
             calendar:    { label: 'SCHEDULED RELEASES',  usesSymbols: false, usesNews: false },
             movers:      { label: 'MOVERS & SENTIMENT',  usesSymbols: false, usesNews: false },
+            prediction:  { label: 'PREDICTION MARKETS',  usesSymbols: false, usesNews: false },
+            heatmap:     { label: 'HEAT MAP',            usesSymbols: false, usesNews: false },
         };
 
-        const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','news','calendar','movers'];
+        const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','heatmap','news','prediction','calendar','movers'];
+
+        const POLYMARKET_FILTERS = [
+            { key: 'all',       label: 'All',       slug: null },
+            { key: 'politics',  label: 'Politics',  slug: 'politics' },
+            { key: 'crypto',    label: 'Crypto',    slug: 'crypto' },
+            { key: 'sports',    label: 'Sports',    slug: 'sports' },
+            { key: 'elections', label: 'Elections', slug: 'elections' },
+            { key: 'economics', label: 'Economics', slug: 'economy' },
+        ];
 
         const DEFAULT_SYMBOLS = {
             stocks:      ['NVDA','MSFT','GOOGL','META','AVGO','CRM'],
@@ -874,6 +987,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         const symbolNameCache = {};  // { symbol: shortName }  from autocomplete
         const fundamentalsCache = {};  // { symbol: { data, ts } }  15-min TTL
         const chartCache = {};   // { "symbol|range": { closes, timestamps, ts } }
+        const polymarketCache = {};   // { "filter|limit": { markets, ts } } 60s; also {"id|<id>": { market, ts }}
+        const polymarketHistoryCache = {};  // { "token|interval": { points, ts } } 60s
         let isRefreshing = false;
         let refreshTimerId = null;
         let autoCompleteAbort = null;
@@ -1166,6 +1281,114 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
         }
 
+        // -- Polymarket (prediction markets) -----------------------------------
+        // Gamma list endpoint is NOT CORS-open → via fetchViaProxy rotation.
+        // CLOB prices-history IS CORS-open → direct fetch.
+
+        async function fetchPolymarketMarkets({ filter = 'all', limit = 20 } = {}) {
+            const cacheKey = `${filter}|${limit}`;
+            const cached = polymarketCache[cacheKey];
+            if (cached && Date.now() - cached.ts < 60_000) return cached.markets;
+            const params = new URLSearchParams({
+                limit: String(limit),
+                active: 'true',
+                closed: 'false',
+                order: 'volume24hr',
+                ascending: 'false',
+            });
+            const filterDef = POLYMARKET_FILTERS.find(f => f.key === filter);
+            if (filterDef?.slug) params.set('tag_slug', filterDef.slug);
+            const url = `https://gamma-api.polymarket.com/markets?${params.toString()}`;
+            try {
+                const data = await fetchViaProxy(url);
+                const arr = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+                const markets = arr.map(normalizePolymarketMarket).filter(Boolean);
+                polymarketCache[cacheKey] = { markets, ts: Date.now() };
+                return markets;
+            } catch (err) {
+                // Keep serving stale markets if we have any.
+                if (cached) { cached.stale = true; return cached.markets; }
+                return null;
+            }
+        }
+
+        async function fetchPolymarketMarket(id) {
+            const cacheKey = `id|${id}`;
+            const cached = polymarketCache[cacheKey];
+            if (cached && Date.now() - cached.ts < 60_000) return cached.market;
+            const url = `https://gamma-api.polymarket.com/markets/${encodeURIComponent(id)}`;
+            try {
+                const data = await fetchViaProxy(url);
+                const market = normalizePolymarketMarket(Array.isArray(data) ? data[0] : data);
+                if (!market) return cached?.market || null;
+                polymarketCache[cacheKey] = { market, ts: Date.now() };
+                return market;
+            } catch (err) {
+                return cached?.market || null;
+            }
+        }
+
+        async function fetchPolymarketHistory(clobTokenId, interval = '1w') {
+            const cacheKey = `${clobTokenId}|${interval}`;
+            const cached = polymarketHistoryCache[cacheKey];
+            if (cached && Date.now() - cached.ts < 60_000) return cached.points;
+            const url = `https://clob.polymarket.com/prices-history?market=${encodeURIComponent(clobTokenId)}&interval=${encodeURIComponent(interval)}&fidelity=60`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('history HTTP ' + res.status);
+                const data = await res.json();
+                const points = (data?.history || []).map(p => ({ t: p.t, p: Number(p.p) })).filter(p => Number.isFinite(p.p));
+                polymarketHistoryCache[cacheKey] = { points, ts: Date.now() };
+                return points;
+            } catch (err) {
+                return cached?.points || null;
+            }
+        }
+
+        function normalizePolymarketMarket(raw) {
+            if (!raw || typeof raw !== 'object') return null;
+            const parseJSONField = (v) => {
+                if (v == null) return null;
+                if (Array.isArray(v)) return v;
+                if (typeof v === 'string') {
+                    try { return JSON.parse(v); } catch { return null; }
+                }
+                return null;
+            };
+            const outcomes = parseJSONField(raw.outcomes) || ['Yes', 'No'];
+            const prices = (parseJSONField(raw.outcomePrices) || []).map(Number);
+            const tokens = parseJSONField(raw.clobTokenIds) || [];
+            const yesIdx = outcomes.findIndex(o => /^yes$/i.test(String(o).trim()));
+            const noIdx  = outcomes.findIndex(o => /^no$/i.test(String(o).trim()));
+            const yesPrice = yesIdx >= 0 ? prices[yesIdx] : prices[0];
+            const noPrice  = noIdx  >= 0 ? prices[noIdx]  : prices[1];
+            return {
+                id: String(raw.id ?? ''),
+                slug: raw.slug || null,
+                question: raw.question || raw.title || '(unnamed market)',
+                description: raw.description || '',
+                outcomes,
+                outcomePrices: prices,
+                yesPrice: Number.isFinite(yesPrice) ? yesPrice : null,
+                noPrice:  Number.isFinite(noPrice)  ? noPrice  : null,
+                clobTokenIds: tokens,
+                yesTokenId: yesIdx >= 0 ? tokens[yesIdx] : tokens[0],
+                noTokenId:  noIdx  >= 0 ? tokens[noIdx]  : tokens[1],
+                volume24hr:  Number(raw.volume24hr) || 0,
+                volumeNum:   Number(raw.volumeNum)  || Number(raw.volume) || 0,
+                liquidityNum: Number(raw.liquidityNum) || Number(raw.liquidity) || 0,
+                endDate:     raw.endDate || raw.endDateIso || null,
+                image:       raw.image || null,
+                bestBid:     Number.isFinite(Number(raw.bestBid)) ? Number(raw.bestBid) : null,
+                bestAsk:     Number.isFinite(Number(raw.bestAsk)) ? Number(raw.bestAsk) : null,
+                spread:      Number.isFinite(Number(raw.spread)) ? Number(raw.spread) : null,
+                oneWeekChange:  Number.isFinite(Number(raw.oneWeekPriceChange))  ? Number(raw.oneWeekPriceChange)  : null,
+                oneMonthChange: Number.isFinite(Number(raw.oneMonthPriceChange)) ? Number(raw.oneMonthPriceChange) : null,
+                active:   raw.active !== false,
+                closed:   !!raw.closed,
+            };
+        }
+
         async function fetchChart(symbol, range, interval) {
             const key = `${symbol}|${range}`;
             const cached = chartCache[key];
@@ -1318,6 +1541,17 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }));
         }
 
+        async function refreshPredictionPanels() {
+            const pmPanels = state.layout.filter(pid => state.panels[pid]?.type === 'prediction');
+            await Promise.all(pmPanels.map(async pid => {
+                const p = state.panels[pid];
+                const filter = p.filter || 'all';
+                const limit = p.limit || 20;
+                const markets = await fetchPolymarketMarkets({ filter, limit });
+                p._markets = markets || [];
+            }));
+        }
+
         async function refreshAll() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -1325,7 +1559,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (btn) btn.disabled = true;
             updateStatus('FETCHING…', 'normal');
             try {
-                await Promise.all([refreshQuotes(), refreshNewsPanels()]);
+                await Promise.all([refreshQuotes(), refreshNewsPanels(), refreshPredictionPanels()]);
                 renderAllPanels();
                 updateStatus('CONNECTED', 'normal');
                 updateTimestamps();
@@ -1401,6 +1635,14 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const t = NEWS_TOPICS[panel.topic];
                 return ` <span style="color:var(--text-secondary);font-weight:400;">· ${t ? t.label : panel.topic}</span>`;
             }
+            if (panel.type === 'prediction') {
+                const f = POLYMARKET_FILTERS.find(x => x.key === (panel.filter || 'all'));
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${f ? f.label : panel.filter}</span>`;
+            }
+            if (panel.type === 'heatmap' && panel.sourcePanelId) {
+                const src = state.panels[panel.sourcePanelId];
+                if (src) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${PANEL_TYPES[src.type].label}</span>`;
+            }
             return '';
         }
 
@@ -1463,6 +1705,40 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 `;
             }
 
+            let predictionSection = '';
+            if (panel.type === 'prediction') {
+                const chips = POLYMARKET_FILTERS.map(f => {
+                    const active = (panel.filter || 'all') === f.key ? ' active' : '';
+                    return `<button class="chip${active}" onclick="setPredictionFilter('${pid}','${f.key}')">${f.label}</button>`;
+                }).join('');
+                predictionSection = `
+                    <div class="tray-row">
+                        <span class="tray-label">CATEGORY</span>
+                        ${chips}
+                    </div>
+                `;
+            }
+
+            let heatmapSection = '';
+            if (panel.type === 'heatmap') {
+                const sourceOptions = state.layout
+                    .filter(id => PANEL_TYPES[state.panels[id]?.type]?.usesSymbols)
+                    .map(id => {
+                        const p = state.panels[id];
+                        const selected = panel.sourcePanelId === id ? ' selected' : '';
+                        return `<option value="${id}"${selected}>${PANEL_TYPES[p.type].label}</option>`;
+                    }).join('');
+                heatmapSection = `
+                    <div class="tray-row">
+                        <span class="tray-label">SOURCE</span>
+                        <select class="tray-select" onchange="setHeatmapSource('${pid}', this.value)">
+                            <option value="">(pick panel)</option>
+                            ${sourceOptions}
+                        </select>
+                    </div>
+                `;
+            }
+
             return `
                 <div class="tray-inner">
                     <div class="tray-row">
@@ -1471,6 +1747,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     </div>
                     ${symbolSection}
                     ${topicSection}
+                    ${predictionSection}
+                    ${heatmapSection}
                 </div>
             `;
         }
@@ -1485,10 +1763,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 case 'commodities':
                 case 'bonds':
                     return renderQuoteTable(panel);
-                case 'news':     return renderNews(panel);
-                case 'calendar': return renderCalendar();
-                case 'movers':   return renderMovers();
-                default:         return `<div class="no-data">Unknown panel type: ${panel.type}</div>`;
+                case 'news':       return renderNews(panel);
+                case 'calendar':   return renderCalendar();
+                case 'movers':     return renderMovers();
+                case 'prediction': return renderPredictionPanel(panel);
+                case 'heatmap':    return renderHeatMap(panel);
+                default:           return `<div class="no-data">Unknown panel type: ${panel.type}</div>`;
             }
         }
 
@@ -1547,6 +1827,270 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 </div>`;
             }).join('');
             return rows;
+        }
+
+        // ============================================================
+        // RENDERING — HEAT MAP
+        // ============================================================
+
+        const heatmapHydrating = new Set();
+        const heatmapQueue = [];
+        let heatmapActive = 0;
+        const HEATMAP_CONCURRENT = 5;
+        const HEATMAP_MAX_TILES = 15;
+
+        function renderHeatMap(panel) {
+            const srcId = panel.sourcePanelId;
+            if (!srcId || !state.panels[srcId]) {
+                return `<div class="no-data">Pick a source panel in the tray (SOURCE).</div>`;
+            }
+            const src = state.panels[srcId];
+            if (!PANEL_TYPES[src.type]?.usesSymbols) {
+                return `<div class="no-data">Source panel is not a symbol panel.</div>`;
+            }
+            const symbols = (src.symbols || []).slice();
+            if (!symbols.length) {
+                return `<div class="no-data">Source panel has no symbols.</div>`;
+            }
+            const items = symbols.map(sym => {
+                const q = quoteCache[sym];
+                const f = fundamentalsCache[sym]?.data;
+                return {
+                    sym,
+                    changePercent: q?.changePercent ?? null,
+                    marketCap:     f?.marketCap ?? null,
+                    sector:        f?.sector || null,
+                };
+            });
+            queueHeatmapFundamentals(symbols, panel);
+
+            const missingFundCount = items.filter(x => x.marketCap == null).length;
+            const useEqual = missingFundCount === items.length;
+            const sectorBuckets = bucketBySector(items, useEqual);
+            // Cap total tiles to HEATMAP_MAX_TILES by trimming smallest per bucket.
+            let totalTiles = sectorBuckets.reduce((n, b) => n + b.items.length, 0);
+            while (totalTiles > HEATMAP_MAX_TILES) {
+                const biggest = sectorBuckets.reduce((a, b) => b.items.length > a.items.length ? b : a);
+                if (biggest.items.length <= 1) break;
+                biggest.items.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+                const dropped = biggest.items.pop();
+                biggest.weight -= (dropped.weight || 1);
+                totalTiles--;
+            }
+
+            const panelId = Object.keys(state.panels).find(k => state.panels[k] === panel) || 'heatmap';
+            const W = 560, H = 320;
+            // Layout sector buckets across outer rect.
+            const outer = { x: 0, y: 0, w: W, h: H };
+            const bucketLayout = squarifiedTreemap(
+                sectorBuckets.map(b => ({ key: b.sector, weight: Math.max(0.0001, b.weight), ref: b })),
+                outer
+            );
+            const sectorRects = bucketLayout.map(l => {
+                // Reserve 14px header for sector label
+                const headerH = Math.min(14, Math.max(10, Math.floor(l.rect.h * 0.12)));
+                return {
+                    bucket: l.ref,
+                    outer: l.rect,
+                    header: { ...l.rect, h: headerH },
+                    inner: { x: l.rect.x, y: l.rect.y + headerH, w: l.rect.w, h: Math.max(0, l.rect.h - headerH) },
+                };
+            });
+
+            let tilesHTML = '';
+            for (const sr of sectorRects) {
+                const tileItems = sr.bucket.items
+                    .map(it => ({ key: it.sym, weight: Math.max(0.0001, it.weight), ref: it }));
+                const tiles = squarifiedTreemap(tileItems, sr.inner);
+                tilesHTML += `<div class="hm-sector-hdr" style="left:${sr.header.x}px;top:${sr.header.y}px;width:${sr.header.w}px;height:${sr.header.h}px;">${escapeHTML(sr.bucket.sector)}</div>`;
+                for (const t of tiles) {
+                    const it = t.ref;
+                    const bg = heatColor(it.changePercent);
+                    const pct = it.changePercent == null ? '—'
+                        : `${it.changePercent > 0 ? '+' : ''}${it.changePercent.toFixed(2)}%`;
+                    const showPct = t.rect.w > 48 && t.rect.h > 28;
+                    const style = `left:${t.rect.x}px;top:${t.rect.y}px;width:${t.rect.w}px;height:${t.rect.h}px;background:${bg};`;
+                    tilesHTML += `<div class="hm-tile" style="${style}" title="${escapeAttr(it.sym)} ${pct}" onclick="openDrilldown('${escapeAttr(it.sym)}')">
+                        <span class="hm-sym">${escapeHTML(it.sym)}</span>
+                        ${showPct ? `<span class="hm-pct">${pct}</span>` : ''}
+                    </div>`;
+                }
+            }
+            return `<div class="hm-wrap" data-pid="${panelId}" style="width:${W}px;height:${H}px;">${tilesHTML}</div>`;
+        }
+
+        function bucketBySector(items, useEqual) {
+            const map = new Map();
+            for (const it of items) {
+                const sector = it.sector || 'UNCLASSIFIED';
+                const weight = useEqual ? 1 : (it.marketCap || 1);
+                if (!map.has(sector)) map.set(sector, { sector, items: [], weight: 0 });
+                const b = map.get(sector);
+                b.items.push({ ...it, weight });
+                b.weight += weight;
+            }
+            return [...map.values()].sort((a, b) => b.weight - a.weight);
+        }
+
+        // Squarified treemap (Bruls, Huijing, van Wijk 2000). Pure function.
+        function squarifiedTreemap(items, rect) {
+            const sorted = items.slice().sort((a, b) => b.weight - a.weight);
+            const total = sorted.reduce((s, it) => s + it.weight, 0);
+            if (!total || !sorted.length) return [];
+            const area = rect.w * rect.h;
+            const scaled = sorted.map(it => ({ ...it, area: it.weight / total * area }));
+            const out = [];
+            layout(scaled, [], { ...rect }, out);
+            return out;
+            function shortestSide(r) { return Math.min(r.w, r.h); }
+            function worst(row, w) {
+                const sum = row.reduce((s, r) => s + r.area, 0);
+                const rMax = Math.max(...row.map(r => r.area));
+                const rMin = Math.min(...row.map(r => r.area));
+                const w2 = w * w;
+                const sum2 = sum * sum;
+                return Math.max((w2 * rMax) / sum2, sum2 / (w2 * rMin));
+            }
+            function layout(children, row, r, out) {
+                if (!children.length && !row.length) return;
+                const side = shortestSide(r);
+                if (!children.length) { placeRow(row, r, out); return; }
+                const head = children[0];
+                if (!row.length) {
+                    layout(children.slice(1), [head], r, out);
+                    return;
+                }
+                const w1 = worst(row, side);
+                const w2 = worst(row.concat([head]), side);
+                if (w2 <= w1) {
+                    layout(children.slice(1), row.concat([head]), r, out);
+                } else {
+                    const newR = placeRow(row, r, out);
+                    layout(children, [], newR, out);
+                }
+            }
+            function placeRow(row, r, out) {
+                const sum = row.reduce((s, x) => s + x.area, 0);
+                if (sum <= 0) return r;
+                let newR;
+                if (r.w >= r.h) {
+                    // Place row as a column at left
+                    const colW = sum / r.h;
+                    let yCursor = r.y;
+                    for (const it of row) {
+                        const hh = it.area / colW;
+                        out.push({ key: it.key, ref: it.ref, rect: { x: r.x, y: yCursor, w: colW, h: hh } });
+                        yCursor += hh;
+                    }
+                    newR = { x: r.x + colW, y: r.y, w: r.w - colW, h: r.h };
+                } else {
+                    const rowH = sum / r.w;
+                    let xCursor = r.x;
+                    for (const it of row) {
+                        const ww = it.area / rowH;
+                        out.push({ key: it.key, ref: it.ref, rect: { x: xCursor, y: r.y, w: ww, h: rowH } });
+                        xCursor += ww;
+                    }
+                    newR = { x: r.x, y: r.y + rowH, w: r.w, h: r.h - rowH };
+                }
+                return newR;
+            }
+        }
+
+        // Diverging red→dim→green ramp in [−3%, +3%]; clamped.
+        function heatColor(pct) {
+            if (pct == null || !Number.isFinite(pct)) return 'rgb(30,30,30)';
+            const clamped = Math.max(-3, Math.min(3, pct));
+            const t = Math.min(1, Math.abs(clamped) / 3);
+            // Base: dim gray-green at 0, saturates to red (neg) or bright green (pos)
+            if (clamped >= 0) {
+                // #143d14 base → #00cc00 peak
+                const r = Math.round(20 * (1 - t) + 0   * t);
+                const g = Math.round(61 * (1 - t) + 204 * t);
+                const b = Math.round(20 * (1 - t) + 0   * t);
+                return `rgb(${r},${g},${b})`;
+            } else {
+                // #3d1414 base → #cc2020 peak
+                const r = Math.round(61 * (1 - t) + 204 * t);
+                const g = Math.round(20 * (1 - t) + 32  * t);
+                const b = Math.round(20 * (1 - t) + 32  * t);
+                return `rgb(${r},${g},${b})`;
+            }
+        }
+
+        function queueHeatmapFundamentals(symbols, panel) {
+            const panelId = Object.keys(state.panels).find(k => state.panels[k] === panel);
+            if (!panelId) return;
+            for (const sym of symbols) {
+                if (fundamentalsCache[sym]) continue;
+                if (heatmapHydrating.has(sym)) continue;
+                heatmapHydrating.add(sym);
+                heatmapQueue.push({ sym, pid: panelId });
+            }
+            drainHeatmapQueue();
+        }
+
+        function drainHeatmapQueue() {
+            while (heatmapActive < HEATMAP_CONCURRENT && heatmapQueue.length) {
+                const { sym, pid } = heatmapQueue.shift();
+                heatmapActive++;
+                fetchFundamentals(sym).finally(() => {
+                    heatmapActive--;
+                    heatmapHydrating.delete(sym);
+                    // Re-render just the heatmap panel (or all, cheap).
+                    const panel = state.panels[pid];
+                    if (panel && panel.type === 'heatmap') {
+                        const content = document.getElementById(`content-${pid}`);
+                        if (content) content.innerHTML = renderPanelContent(pid);
+                    }
+                    drainHeatmapQueue();
+                });
+            }
+        }
+
+        function renderPredictionPanel(panel) {
+            const markets = panel._markets;
+            if (markets == null) {
+                return `<div class="no-data">LOADING PREDICTION MARKETS…</div>`;
+            }
+            if (!markets.length) {
+                return `<div class="no-data">No active markets for this filter.</div>`;
+            }
+            return markets.map(m => {
+                const yesPct = Math.round((m.yesPrice ?? 0) * 100);
+                const noPct  = Math.round((m.noPrice  ?? 0) * 100);
+                const volStr = formatVolume(m.volume24hr) || formatVolume(m.volumeNum) || '';
+                const daysLeft = m.endDate ? daysUntil(m.endDate) : null;
+                const daysStr = daysLeft == null ? '' : (daysLeft >= 0 ? `${daysLeft}d left` : 'ended');
+                const meta = [volStr && `$${volStr} VOL`, daysStr].filter(Boolean).join(' · ');
+                return `<div class="pred-row" data-id="${escapeAttr(m.id)}" onclick="openDrilldown('pm:${escapeAttr(m.id)}')">
+                    <div class="pred-question">${escapeHTML(truncate(m.question, 110))}</div>
+                    <div class="pred-bars">
+                        <span class="pred-bar-label">YES</span>
+                        <span class="prob-bar prob-bar-yes">${renderProbBar(m.yesPrice)}</span>
+                        <span class="pred-bar-pct positive">${yesPct}¢</span>
+                        <span class="pred-bar-spacer"></span>
+                        <span class="pred-bar-label">NO</span>
+                        <span class="prob-bar prob-bar-no">${renderProbBar(m.noPrice, true)}</span>
+                        <span class="pred-bar-pct negative">${noPct}¢</span>
+                    </div>
+                    ${meta ? `<div class="pred-meta">${meta}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        function renderProbBar(prob, invert = false) {
+            const p = Math.max(0, Math.min(1, Number(prob) || 0));
+            const filled = Math.round(p * 10);
+            const block = invert ? '░'.repeat(10 - filled) + '█'.repeat(filled)
+                                 : '█'.repeat(filled) + '░'.repeat(10 - filled);
+            return escapeHTML(block);
+        }
+
+        function daysUntil(iso) {
+            const t = Date.parse(iso);
+            if (!Number.isFinite(t)) return null;
+            return Math.round((t - Date.now()) / 86_400_000);
         }
 
         function renderQuoteMeta(q, priceFormat) {
@@ -1620,10 +2164,17 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             return 'usd';
         }
 
-        async function openDrilldown(symbol) {
+        function openDrilldown(id) {
+            if (!id) return;
+            const s = String(id);
+            if (s.startsWith('pm:')) return openPredictionDrilldown(s.slice(3));
+            return openTickerDrilldown(s);
+        }
+
+        async function openTickerDrilldown(symbol) {
             const sym = (symbol || '').toUpperCase();
             if (!sym) return;
-            currentDrilldown = { symbol: sym, range: '1d' };
+            currentDrilldown = { kind: 'ticker', symbol: sym, range: '1d' };
             const overlay = document.getElementById('drilldownOverlay');
             overlay.style.display = 'flex';
             document.body.style.overflow = 'hidden';
@@ -1694,6 +2245,171 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             document.body.style.overflow = '';
         }
 
+        // -- Prediction drilldown ----------------------------------------------
+
+        const PRED_INTERVALS = { '1h': '1h', '6h': '6h', '1d': '1d', '1w': '1w', '1m': '1m', 'max': 'max' };
+
+        async function openPredictionDrilldown(marketId) {
+            if (!marketId) return;
+            currentDrilldown = { kind: 'prediction', marketId, range: '1w' };
+            const overlay = document.getElementById('drilldownOverlay');
+            overlay.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+
+            document.getElementById('ddSym').textContent = 'POLYMARKET';
+            document.getElementById('ddName').textContent = '';
+            document.getElementById('ddPriceRow').innerHTML = '<span class="dd-price">--</span>';
+            renderDrilldownRanges('1w', 'prediction');
+            document.getElementById('ddChart').innerHTML = '<div class="loading">LOADING PROBABILITY HISTORY…</div>';
+            document.getElementById('ddStats').innerHTML = '<div class="loading">LOADING MARKET DATA…</div>';
+            document.getElementById('ddNews').innerHTML = '<div class="loading">LOADING NEWS…</div>';
+
+            const market = await fetchPolymarketMarket(marketId);
+            if (!currentDrilldown || currentDrilldown.marketId !== marketId) return;
+            if (!market) {
+                document.getElementById('ddSym').textContent = 'MARKET';
+                document.getElementById('ddStats').innerHTML =
+                    '<div class="error-message">MARKET DATA UNAVAILABLE — PRESS R TO RETRY</div>';
+                document.getElementById('ddChart').innerHTML =
+                    '<div class="error-message">CHART UNAVAILABLE</div>';
+                document.getElementById('ddNews').innerHTML =
+                    '<div class="error-message">NEWS UNAVAILABLE</div>';
+                return;
+            }
+            currentDrilldown.market = market;
+
+            document.getElementById('ddSym').textContent = 'POLYMARKET';
+            document.getElementById('ddName').textContent = truncate(market.question, 80);
+            renderPredictionPriceBlock(market);
+            document.getElementById('ddStats').innerHTML = renderPredictionStats(market);
+
+            const [histRes, newsRes] = await Promise.allSettled([
+                fetchPolymarketHistory(market.yesTokenId, '1w'),
+                fetchNewsRSS(market.question, 8),
+            ]);
+            if (!currentDrilldown || currentDrilldown.marketId !== marketId) return;
+
+            if (histRes.status === 'fulfilled' && Array.isArray(histRes.value) && histRes.value.length) {
+                drawPredictionChart(histRes.value);
+            } else {
+                document.getElementById('ddChart').innerHTML =
+                    '<div class="error-message">PROBABILITY HISTORY UNAVAILABLE</div>';
+            }
+            if (newsRes.status === 'fulfilled' && Array.isArray(newsRes.value)) {
+                const articles = newsRes.value.slice(0, 5);
+                document.getElementById('ddNews').innerHTML = articles.length
+                    ? articles.map(a => `
+                        <div class="news-item">
+                            <div class="news-meta">${formatRelativeTime(a.publishedAt)} · ${escapeHTML(a.source)}</div>
+                            <div class="news-headline"><a href="${escapeAttr(a.url)}" target="_blank" rel="noopener">${escapeHTML(a.title)}</a></div>
+                        </div>
+                    `).join('')
+                    : '<div class="error-message">NO RELATED HEADLINES</div>';
+            } else {
+                document.getElementById('ddNews').innerHTML = '<div class="error-message">NEWS UNAVAILABLE</div>';
+            }
+        }
+
+        async function changePredictionRange(range) {
+            if (!currentDrilldown || currentDrilldown.kind !== 'prediction') return;
+            const interval = PRED_INTERVALS[range] || '1w';
+            currentDrilldown.range = range;
+            renderDrilldownRanges(range, 'prediction');
+            document.getElementById('ddChart').innerHTML = '<div class="loading">LOADING PROBABILITY HISTORY…</div>';
+            const market = currentDrilldown.market;
+            if (!market?.yesTokenId) {
+                document.getElementById('ddChart').innerHTML = '<div class="error-message">NO HISTORY TOKEN</div>';
+                return;
+            }
+            const points = await fetchPolymarketHistory(market.yesTokenId, interval);
+            if (!currentDrilldown || currentDrilldown.range !== range) return;
+            if (Array.isArray(points) && points.length) drawPredictionChart(points);
+            else document.getElementById('ddChart').innerHTML =
+                '<div class="error-message">PROBABILITY HISTORY UNAVAILABLE FOR THIS RANGE</div>';
+        }
+
+        function renderPredictionPriceBlock(market) {
+            const yesPct = Math.round((market.yesPrice ?? 0) * 100);
+            const noPct  = Math.round((market.noPrice  ?? 0) * 100);
+            const wk = market.oneWeekChange;
+            const yesCls = wk == null ? 'neutral' : (wk > 0 ? 'positive' : wk < 0 ? 'negative' : 'neutral');
+            const wkStr  = wk == null ? '' : `${wk > 0 ? '+' : ''}${(wk * 100).toFixed(1)}pt 1W`;
+            const el = document.getElementById('ddPriceRow');
+            el.innerHTML = `
+                <span class="dd-pred-tile ${yesCls}">YES ${yesPct}%</span>
+                <span class="dd-pred-tile">NO ${noPct}%</span>
+                ${wkStr ? `<span class="dd-change ${yesCls}">${wkStr}</span>` : ''}
+            `;
+        }
+
+        function renderPredictionStats(market) {
+            const fmtMoney = n => {
+                if (!Number.isFinite(n) || n <= 0) return '—';
+                if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+                if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+                if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
+                return '$' + Math.round(n).toLocaleString('en-US');
+            };
+            const fmtPct = n => (n == null || !Number.isFinite(n)) ? '—' : `${n > 0 ? '+' : ''}${(n * 100).toFixed(1)}pt`;
+            const fmtDate = iso => {
+                if (!iso) return '—';
+                const d = new Date(iso);
+                return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            };
+            const daysLeft = market.endDate ? daysUntil(market.endDate) : null;
+            const cells = [
+                ['24H VOL',   fmtMoney(market.volume24hr)],
+                ['VOL TOTAL', fmtMoney(market.volumeNum)],
+                ['LIQUIDITY', fmtMoney(market.liquidityNum)],
+                ['BEST BID',  market.bestBid != null ? `${Math.round(market.bestBid * 100)}¢` : '—'],
+                ['BEST ASK',  market.bestAsk != null ? `${Math.round(market.bestAsk * 100)}¢` : '—'],
+                ['SPREAD',    market.spread != null ? `${Math.round(market.spread * 100)}¢` : '—'],
+                ['1W CHANGE', fmtPct(market.oneWeekChange)],
+                ['1M CHANGE', fmtPct(market.oneMonthChange)],
+                ['RESOLVES',  fmtDate(market.endDate)],
+                ['DAYS LEFT', daysLeft == null ? '—' : (daysLeft >= 0 ? `${daysLeft}d` : 'ended')],
+            ];
+            const statsGrid = cells.map(([k, v]) =>
+                `<div class="dd-stat"><div class="dd-stat-key">${k}</div><div class="dd-stat-val">${v}</div></div>`
+            ).join('');
+            const tags = [];
+            tags.push(`<span class="dd-tag">POLYMARKET</span>`);
+            if (market.active && !market.closed) tags.push(`<span class="dd-tag">ACTIVE</span>`);
+            if (market.closed) tags.push(`<span class="dd-tag">CLOSED</span>`);
+            const desc = market.description
+                ? `<div class="dd-desc">${escapeHTML(truncate(market.description, 500))}</div>`
+                : '';
+            const link = market.slug
+                ? `<div class="dd-desc"><a href="https://polymarket.com/event/${escapeAttr(market.slug)}" target="_blank" rel="noopener" style="color:var(--text-accent);">View on Polymarket →</a></div>`
+                : '';
+            return `
+                <div class="dd-stats-grid">${statsGrid}</div>
+                <div class="dd-tags">${tags.join('')}</div>
+                ${desc}
+                ${link}
+            `;
+        }
+
+        function drawPredictionChart(history) {
+            const el = document.getElementById('ddChart');
+            const rect = el.getBoundingClientRect();
+            const w = Math.max(600, Math.floor(rect.width) - 4);
+            const h = 260;
+            const pts = history.length > 240 ? downsample(history, 240) : history.slice();
+            const closes = pts.map(p => p.p);
+            const ts = pts.map(p => p.t);
+            el.innerHTML = renderChart({
+                closes,
+                timestamps: ts,
+                width: w,
+                height: h,
+                priceFormat: 'percent01',
+                previousClose: 0.5,
+                yMin: 0,
+                yMax: 1,
+            });
+        }
+
         function renderDrilldownPrice(sym) {
             const q = quoteCache[sym];
             const el = document.getElementById('ddPriceRow');
@@ -1712,11 +2428,15 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             `;
         }
 
-        function renderDrilldownRanges(active) {
-            const ranges = [
+        function renderDrilldownRanges(active, kind = 'ticker') {
+            const tickerRanges = [
                 ['1d','1D'], ['5d','5D'], ['1mo','1M'], ['3mo','3M'],
                 ['ytd','YTD'], ['1y','1Y'], ['5y','5Y'],
             ];
+            const predictionRanges = [
+                ['1h','1H'], ['6h','6H'], ['1d','1D'], ['1w','1W'], ['1m','1M'], ['max','MAX'],
+            ];
+            const ranges = kind === 'prediction' ? predictionRanges : tickerRanges;
             document.getElementById('ddRanges').innerHTML = ranges.map(([r, label]) =>
                 `<button class="chip${r === active ? ' active' : ''}" onclick="changeDrilldownRange('${r}')">${label}</button>`
             ).join('');
@@ -1724,8 +2444,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
         async function changeDrilldownRange(range) {
             if (!currentDrilldown) return;
+            if (currentDrilldown.kind === 'prediction') return changePredictionRange(range);
             currentDrilldown.range = range;
-            renderDrilldownRanges(range);
+            renderDrilldownRanges(range, 'ticker');
             document.getElementById('ddChart').innerHTML = '<div class="loading">LOADING CHART…</div>';
             const chart = await fetchChart(currentDrilldown.symbol, range, RANGE_INTERVALS[range] || '1d');
             if (!currentDrilldown || currentDrilldown.range !== range) return;
@@ -1749,7 +2470,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             });
         }
 
-        function renderChart({ closes, timestamps, width, height, priceFormat, previousClose }) {
+        function renderChart({ closes, timestamps, width, height, priceFormat, previousClose, yMin, yMax }) {
             if (!Array.isArray(closes) || closes.length < 2) {
                 return '<div class="error-message">NO CHART DATA</div>';
             }
@@ -1757,8 +2478,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const ts = (timestamps && timestamps.length)
                 ? (timestamps.length > 240 ? downsample(timestamps, 240) : timestamps.slice())
                 : [];
-            const min = Math.min(...pts);
-            const max = Math.max(...pts);
+            const min = Number.isFinite(yMin) ? yMin : Math.min(...pts);
+            const max = Number.isFinite(yMax) ? yMax : Math.max(...pts);
             const range = max - min || 1;
             const padL = 60, padR = 12, padT = 14, padB = 22;
             const innerW = width - padL - padR;
@@ -1852,6 +2573,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         function formatPriceFor(format, value, isChange = false) {
             if (value == null || Number.isNaN(value)) return '--';
             switch (format) {
+                case 'percent01':
+                    return `${Math.round(value * 100)}%`;
                 case 'yield':
                     return `${value.toFixed(3)}%`;
                 case 'forex':
@@ -2122,10 +2845,46 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             } else {
                 delete panel.topic;
             }
+            if (newType === 'prediction') {
+                const mem = panel.memory.prediction;
+                panel.filter = mem?.filter || panel.filter || 'all';
+                panel.limit = mem?.limit || panel.limit || 20;
+            } else {
+                if (panel.filter != null) panel.memory.prediction = { filter: panel.filter, limit: panel.limit };
+                delete panel.filter;
+                delete panel.limit;
+            }
+            if (newType === 'heatmap') {
+                const mem = panel.memory.heatmap;
+                panel.sourcePanelId = mem?.sourcePanelId || panel.sourcePanelId || null;
+            } else {
+                if (panel.sourcePanelId) panel.memory.heatmap = { sourcePanelId: panel.sourcePanelId };
+                delete panel.sourcePanelId;
+            }
             delete panel._articles;
+            delete panel._markets;
             saveState();
             renderAllPanels();
             refreshAll();
+        }
+
+        function setPredictionFilter(pid, filter) {
+            const panel = state.panels[pid];
+            if (!panel || panel.type !== 'prediction') return;
+            if (panel.filter === filter) return;
+            panel.filter = filter;
+            delete panel._markets;
+            saveState();
+            renderAllPanels();
+            refreshPredictionPanels().then(() => renderAllPanels());
+        }
+
+        function setHeatmapSource(pid, sourcePanelId) {
+            const panel = state.panels[pid];
+            if (!panel || panel.type !== 'heatmap') return;
+            panel.sourcePanelId = sourcePanelId || null;
+            saveState();
+            renderAllPanels();
         }
 
         async function addSymbolToPanel(pid, raw) {
