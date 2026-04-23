@@ -2307,8 +2307,16 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (!ids.length) return;
             const storms = await fetchActiveStorms();
             for (const pid of ids) {
-                state.panels[pid]._storms = storms || [];
-                state.panels[pid]._stormsFailed = !storms;
+                // On failure storms is null — keep _storms null so renderStorms shows
+                // NHC FEED UNAVAILABLE. Do NOT use [] here: empty array looks like a
+                // successful "no storms" response from NOAA.
+                if (storms === null) {
+                    state.panels[pid]._storms = null;
+                    state.panels[pid]._stormsFailed = true;
+                } else {
+                    state.panels[pid]._storms = storms;
+                    state.panels[pid]._stormsFailed = false;
+                }
             }
         }
 
