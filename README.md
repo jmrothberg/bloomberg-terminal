@@ -51,26 +51,27 @@ Every panel type sorts into one of four buckets, and that's the discipline:
 
 1. **Price instruments** — `STOCKS`, `INDICES`, `CRYPTO`, `FOREX`, `COMMODITIES`, `TREASURIES`. Structured numeric quotes.
 2. **Information flow** — `NEWS`, `CALENDAR`, `MOVERS`, `PREDICTION MARKETS`. Narrative + schedule + probabilistic risk. `CALENDAR` straddles macro and energy — a `Macro / Energy / All` chip in the tray filters between BLS / Fed / BEA releases and EIA weeklies + STEO.
-3. **Visualization** — `HEAT MAP`. Sector-weighted treemap over another panel's symbols.
+3. **Visualization** — **Heat map** as a **DISPLAY** mode on any price panel (same symbols as the quote table). Not a separate panel type — open the tray, use **DISPLAY → HEAT MAP** vs **ENTERED** / **A↔Z** / **%**.
 4. **Leading-indicator risk signals** — `SEISMIC EVENTS`, `TROPICAL CYCLONES`. Physical-world events, structured as lat/lon/magnitude/category, that hit the feed before the news cycle prices them in.
 
 The rules for adding more panel types: free CORS-friendly API, threshold that maps to a tradeable instrument, fits the existing list-with-drilldown idiom. That's why there's no flights / nuclear / cyber-KEV / elections firehose — the signal/noise ratio doesn't survive contact with a trading UI.
 
-### Thirteen panel types — reassign any panel to any type
+### Twelve panel types — reassign any panel to any type
+
+Heat map is **not** listed here — it is a **DISPLAY** option on the types below that load symbols (**STOCKS**, **INDICES**, **CRYPTO**, **FOREX**, **COMMODITIES**, **TREASURIES**). See [Display and heat map](#display-and-heat-map-hmap-style).
 
 | Type | What it shows | Default symbols |
 |---|---|---|
-| **STOCKS** | Individual equity watchlist | `NVDA MSFT GOOGL META AVGO CRM` |
+| **STOCKS** | Individual equity watchlist | `NVDA MSFT GOOGL META AVGO CRM BFLY HYPR QSI` |
 | **INDICES** | Market indices | `^GSPC ^IXIC ^DJI ^SOX ^VIX ^RUT` |
 | **CRYPTO** | Cryptocurrencies | `BTC-USD ETH-USD SOL-USD DOGE-USD` |
 | **FOREX** | Currency pairs | `EURUSD=X USDJPY=X GBPUSD=X AUDUSD=X` |
 | **COMMODITIES** | Futures contracts | `CL=F GC=F SI=F NG=F HG=F` |
 | **TREASURIES** | US bond yields | `^IRX ^FVX ^TNX ^TYX` |
-| **NEWS** | Financial headlines by topic | Markets · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World · Chokepoints · EIA (direct RSS) + custom |
+| **NEWS** | Financial headlines by topic | Markets · **Watchlist** (Google News over every ticker in your **WATCHLIST** panels) · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World · Chokepoints · **EIA** (*Today in Energy* RSS — [U.S. Energy Information Administration](https://www.eia.gov/)) + custom |
 | **CALENDAR** | Upcoming US releases (macro + energy) with a `Macro / Energy / All` filter | Computed (CPI, NFP, FOMC, PCE, GDP + EIA WPSR / Nat Gas Storage / STEO) |
 | **MOVERS** | Derived top gainers/losers, VIX, sentiment | From loaded quotes |
 | **PREDICTION MARKETS** | Live Polymarket markets ranked by 24h volume | Filter: All · Politics · Crypto · Sports · Elections · Economics |
-| **HEAT MAP** | Bloomberg-HMAP-style sector-weighted treemap | Source: any symbol panel |
 | **SEISMIC EVENTS** | Live USGS earthquake feed (M4.5+ last 7 days) | Threshold: M4.5 · M5 · M5.5 · M6 · M7 |
 | **TROPICAL CYCLONES** | Active NOAA NHC storms with Saffir-Simpson category | Basin: All · Atlantic · East Pacific · Central Pacific |
 
@@ -100,9 +101,17 @@ The `PREDICTION MARKETS` panel lists the top 20 active Polymarket markets by 24-
 - **Full market description** + link to Polymarket
 - **Related news** — Google News RSS searched on the market question
 
-### Heat map (HMAP-style)
+### Display and heat map (HMAP-style)
 
-The `HEAT MAP` panel renders a squarified treemap of another panel's symbols — tiles sized by market cap, colored on a diverging red↔green ramp by day change, grouped into sector buckets. Pick the source panel from the tray's SOURCE dropdown. Click any tile to open the ticker drilldown. Sector data is hydrated progressively from Yahoo's fundamentals endpoint; first paint uses equal-weighted `UNCLASSIFIED` tiles and re-lays out as sectors resolve.
+On any **price** panel (**STOCKS**, **INDICES**, **CRYPTO**, **FOREX**, **COMMODITIES**, **TREASURIES**), open the tray and use the **DISPLAY** row:
+
+- **ENTERED** — table in the order you typed symbols  
+- **A↔Z** / **%** — sort the table by symbol or day change  
+- **HEAT MAP** — same symbol list as the table, but as a Bloomberg-style **squarified treemap**: tiles sized by market cap, colored on a diverging red↔green ramp by day change, grouped into sector buckets  
+
+**HEAT MAP** toggles off when you pick **ENTERED** or a sort chip (or click **HEAT MAP** again). There is no separate “heat map panel type” and no **SOURCE** dropdown — the treemap always reflects **this** panel’s symbols.
+
+Click any tile to open the ticker drilldown. Sector weights come from Yahoo’s fundamentals endpoint; first paint uses equal-weighted `UNCLASSIFIED` tiles and re-lays out as sectors resolve.
 
 ### Physical-world risk feeds (seismic + tropical cyclones)
 
@@ -130,6 +139,8 @@ Both structured feeds refresh on the same 60s tick as quotes and news.
 
 ### EIA integration
 
+**EIA** is the **U.S. Energy Information Administration** — the federal agency (within the Department of Energy) responsible for official U.S. energy statistics, analysis, and short-term outlooks. In the terminal, “EIA” usually means either that agency’s data schedule (calendar) or its **Today in Energy** editorial RSS feed (news).
+
 The terminal touches EIA in two places, with very different levels of "integration":
 
 #### Release schedule (dates only — **no API calls**)
@@ -144,7 +155,7 @@ Live EIA **numeric** data (actual inventory levels, storage volumes, retail pric
 
 #### EIA Today in Energy (real RSS fetch via proxy)
 
-`NEWS` panels gain an **EIA** topic chip that pulls [EIA's Today in Energy RSS feed](https://www.eia.gov/rss/todayinenergy.xml) directly. This is a **genuine EIA integration** — it fetches EIA's own editorial analysis feed through the existing CORS-proxy rotation (same plumbing as Google News RSS), so every article is EIA-authored. Use this alongside the release calendar: the calendar tells you *when* a WPSR or Nat Gas print is coming, Today in Energy gives you EIA's own write-up of the previous prints and the surrounding market context. No API key required.
+`NEWS` panels include an **EIA** topic chip that pulls [EIA's Today in Energy RSS feed](https://www.eia.gov/rss/todayinenergy.xml) directly (authored by the **U.S. Energy Information Administration**, not third-party headlines). It uses the same CORS-proxy rotation as Google News RSS. Use it alongside the release calendar: the calendar tells you *when* a WPSR or Nat Gas print is coming; **Today in Energy** gives EIA’s own write-up of recent prints and context. No API key required.
 
 The broader `Energy` chip remains a curated Google-News search (`crude oil OPEC natural gas refinery gasoline diesel WPSR EIA inventory`) if you want a wider net that includes Reuters / Bloomberg / CNBC coverage.
 
@@ -155,7 +166,8 @@ The broader `Energy` chip remains a curated Google-News search (`crude oil OPEC 
 ### Interactions
 
 - **Click any panel title** → tray slides down in phosphor green
-- **Panel-type chips** → reassign that panel to any of the 9 types
+- **Panel-type chips** → reassign that panel to any of the 12 types
+- **DISPLAY row** (price panels) → **ENTERED** / **A↔Z** / **%** for the quote table, or **HEAT MAP** for the sector treemap (same symbols)
 - **Type symbol + Enter** → validated against live data and added to the panel
 - **Autocomplete** → as you type, the tray suggests matching tickers (via Yahoo search)
 - **`[×]` next to a symbol** → remove it
@@ -242,7 +254,7 @@ Every number on the screen is from one of these free, public sources. No API key
 | Movers / VIX / Fear-Greed | Derived locally from loaded quotes | — | No network call — free reduction |
 | Prediction markets list | [Polymarket Gamma API](https://docs.polymarket.com/api-reference/introduction) (via proxy) | — | Gamma has no CORS header; same proxy rotation as Yahoo |
 | Prediction history chart | [Polymarket CLOB](https://docs.polymarket.com/api-reference/clob) `prices-history` | — | CLOB is CORS-open — direct fetch, no proxy |
-| Heat map sectors / market caps | Yahoo `fundamentals-timeseries` + `v1/search` | — | Same crumb-free endpoints as drilldown |
+| Heat map (DISPLAY mode on symbol panels) | Yahoo `fundamentals-timeseries` + `v1/search` | — | Treemap sectors / market caps — same endpoints as drilldown; not a separate panel |
 | Seismic events | [USGS M4.5+ week feed](https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson) | — | CORS-open GeoJSON, direct fetch |
 | Tropical cyclones | [NOAA NHC `CurrentStorms.json`](https://www.nhc.noaa.gov/CurrentStorms.json) (via proxy) | — | NHC doesn't serve CORS headers; same proxy rotation as Yahoo |
 

@@ -917,11 +917,11 @@
   1. PRICE INSTRUMENTS — STOCKS, INDICES, CRYPTO, FOREX,
      COMMODITIES, TREASURIES. Structured numeric quotes.
 
-  2. INFORMATION FLOW — NEWS, CALENDAR, MOVERS, PREDICTION
-     MARKETS. Narrative + schedule + probabilistic risk.
+  2. INFORMATION FLOW — NEWS (incl. Watchlist + EIA RSS), CALENDAR,
+     MOVERS, PREDICTION MARKETS. Narrative + schedule + probabilistic risk.
 
-  3. VISUALIZATION — HEAT MAP. Sector-weighted treemap over
-     another panel's symbols.
+  3. VISUALIZATION — HEAT MAP lives under DISPLAY on any price
+     panel (same symbols as the table; no separate panel type).
 
   4. LEADING-INDICATOR RISK SIGNALS — SEISMIC EVENTS,
      TROPICAL CYCLONES. Physical-world events, structured as
@@ -939,8 +939,8 @@ contact with a trading UI.</pre>
                     <div class="help-section-title">CHANGE A PANEL'S DATA TYPE</div>
                     <pre>Click any panel title (e.g. "INDICES ▾") to pull down its tray.
 Click a panel-type chip: [STOCKS] [INDICES] [CRYPTO] [FOREX]
-[COMMODITIES] [TREASURIES] [HEAT MAP] [NEWS] [PREDICTION
-MARKETS] [CALENDAR] [MOVERS].
+[COMMODITIES] [TREASURIES] [NEWS] [PREDICTION MARKETS]
+[CALENDAR] [MOVERS] [SEISMIC] [STORMS].
 The panel's title, content, and defaults switch instantly.</pre>
                 </div>
 
@@ -956,7 +956,12 @@ Symbol formats:
   Crypto      BTC-USD, ETH-USD, SOL-USD
   Forex       EURUSD=X, USDJPY=X, GBPUSD=X
   Commodities CL=F (oil), GC=F (gold), SI=F (silver)
-  Treasuries  ^IRX (3M), ^FVX (5Y), ^TNX (10Y), ^TYX (30Y)</pre>
+  Treasuries  ^IRX (3M), ^FVX (5Y), ^TNX (10Y), ^TYX (30Y)
+
+On any price panel (WATCHLIST, INDICES, CRYPTO, …), the tray's
+DISPLAY row switches the main view: ENTERED / A↔Z / % sort the
+table; HEAT MAP shows the sector treemap for the same symbols
+(toggle HEAT MAP off with ENTERED or another DISPLAY chip).</pre>
                 </div>
 
                 <div class="help-section">
@@ -977,8 +982,10 @@ Press ESC (or [×]) to close.</pre>
                 <div class="help-section">
                     <div class="help-section-title">CHANGE NEWS TOPIC</div>
                     <pre>On a NEWS panel, click a topic chip in the tray:
-Markets · Tech/AI · Semis · Crypto · Economy · Energy ·
-Politics · World · Chokepoints · EIA.
+Markets · Watchlist · Tech/AI · Semis · Crypto · Economy ·
+Energy · Politics · World · Chokepoints · EIA.
+Watchlist runs a Google News search over every ticker in your
+WATCHLIST (stocks) panels — add symbols there first.
 Or type a custom query and press Enter to make your own topic.
 
 CHOKEPOINTS is a curated preset for shipping / supply-chain
@@ -987,12 +994,14 @@ incidents. Ripples into oil (CL=F), nat-gas (NG=F), container
 shippers, and the dry-bulk ETF (BDRY) before the move shows
 in price panels.
 
-EIA pulls EIA's Today in Energy RSS directly (not a Google
+EIA = U.S. Energy Information Administration (federal energy
+stats & analysis; part of the Department of Energy). The EIA
+topic pulls their Today in Energy RSS directly (not a Google
 News search) — every article is EIA-authored analysis of the
 latest petroleum / natural gas / electricity / renewables
-release. Pair with the Energy release schedule in CALENDAR:
-CALENDAR tells you WHEN a WPSR or Nat Gas print is coming,
-EIA tells you EIA's own read on the last one.</pre>
+story. Pair with the Energy release schedule in CALENDAR:
+CALENDAR tells you WHEN a WPSR or Nat Gas print is coming;
+the EIA topic gives EIA's own read on the last one.</pre>
                 </div>
 
                 <div class="help-section">
@@ -1001,7 +1010,7 @@ EIA tells you EIA's own read on the last one.</pre>
 DATES are computed client-side from weekday math — CALENDAR
 never fetches anything from BLS, BEA, or EIA. When a release
 hits, you still have to read the actual number elsewhere
-(e.g. the EIA news chip for EIA's own write-up).
+(e.g. the NEWS panel · EIA topic for EIA's own write-up).
 
 Click a CATEGORY chip in the tray to filter:
 
@@ -1061,17 +1070,20 @@ extended data entirely.</pre>
                 </div>
 
                 <div class="help-section">
-                    <div class="help-section-title">HEAT MAP</div>
-                    <pre>Bloomberg-HMAP-style squarified treemap of another panel's
-symbols — tiles sized by market cap, colored on a diverging
-red↔green ramp by today's % change, grouped into sector
-buckets (Technology, Energy, Health Care, …).
+                    <div class="help-section-title">DISPLAY AND HEAT MAP</div>
+                    <pre>Heat map is not a separate panel TYPE — it is a DISPLAY mode
+on any price panel, using the same symbol list as the quote table.
 
-In the tray, pick a SOURCE panel (any symbol panel) from the
-dropdown. First paint shows equal-weighted UNCLASSIFIED tiles
-within ~1s; fundamentals hydrate progressively (5 at a time),
-and the layout re-lays out as sectors resolve. Click any tile
-to open the ticker drilldown.</pre>
+Bloomberg-HMAP-style squarified treemap: tiles sized by market
+cap, colored on a diverging red↔green ramp by today's % change,
+grouped into sector buckets (Technology, Energy, Health Care, …).
+
+Open the tray on WATCHLIST, INDICES, CRYPTO, FOREX, etc. Under
+DISPLAY, click HEAT MAP (click again, or ENTERED / A↔Z / %, to
+return to the table). First paint shows equal-weighted
+UNCLASSIFIED tiles within ~1s; fundamentals hydrate
+progressively (5 at a time), and the layout re-lays out as
+sectors resolve. Click any tile to open the ticker drilldown.</pre>
                 </div>
 
                 <div class="help-section">
@@ -1129,7 +1141,8 @@ Bonds backup:  US Treasury Fiscal Data API
 Fundamentals: Yahoo fundamentals-timeseries + v1/search
 Prediction:   Polymarket Gamma (proxied) + CLOB (direct)
 News:         Google News RSS (proxied)
-EIA news:     eia.gov/rss/todayinenergy.xml (proxied, direct RSS)
+EIA news:     eia.gov/rss/todayinenergy.xml — U.S. Energy Information
+              Administration "Today in Energy" (proxied RSS)
 Calendar:     Computed client-side — schedule only, no API
 Movers/VIX:   Derived locally from loaded quotes
 Seismic:      USGS earthquake.usgs.gov M4.5+ week feed (direct)
@@ -1226,12 +1239,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             calendar:    { label: 'SCHEDULED RELEASES',  usesSymbols: false, usesNews: false },
             movers:      { label: 'MOVERS & SENTIMENT',  usesSymbols: false, usesNews: false },
             prediction:  { label: 'PREDICTION MARKETS',  usesSymbols: false, usesNews: false },
-            heatmap:     { label: 'HEAT MAP',            usesSymbols: false, usesNews: false },
             seismic:     { label: 'SEISMIC EVENTS',      usesSymbols: false, usesNews: false },
             storms:      { label: 'TROPICAL CYCLONES',   usesSymbols: false, usesNews: false },
         };
 
-        const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','heatmap','news','prediction','calendar','movers','seismic','storms'];
+        const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','news','prediction','calendar','movers','seismic','storms'];
 
         const POLYMARKET_FILTERS = [
             { key: 'all',       label: 'All',       slug: null },
@@ -1253,6 +1265,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
         const NEWS_TOPICS = {
             market:      { label: 'Markets',     query: 'stock market today NYSE NASDAQ' },
+            // fromWatchlist: query built at fetch time from all WATCHLIST (stocks) panel symbols
+            watchlist:   { label: 'Watchlist',   fromWatchlist: true },
             tech:        { label: 'Tech/AI',     query: 'artificial intelligence technology stocks earnings' },
             semi:        { label: 'Semis',       query: 'semiconductor chip industry NVIDIA TSMC ASML' },
             crypto:      { label: 'Crypto',      query: 'bitcoin ethereum cryptocurrency' },
@@ -1334,6 +1348,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     const parsed = JSON.parse(raw);
                     if (parsed && parsed.version === 2) {
                         state = mergeState(DEFAULT_STATE, parsed);
+                        migrateLegacySavedState();
                         return;
                     }
                 }
@@ -1354,6 +1369,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (legacyTopic && NEWS_TOPICS[legacyTopic]) {
                     state.panels.p2.topic = legacyTopic === 'ai' ? 'tech' : (legacyTopic === 'semiconductor' ? 'semi' : legacyTopic);
                 }
+                migrateLegacySavedState();
                 saveState();
                 LEGACY_KEYS.forEach(k => localStorage.removeItem(k));
             } catch (e) {
@@ -1374,6 +1390,54 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (saved.config) merged.config = { ...base.config, ...saved.config };
             if (saved.ui)     merged.ui     = { ...base.ui, ...saved.ui };
             return merged;
+        }
+
+        // Old layouts used panel.type === 'heatmap' + sourcePanelId. Heat map is now
+        // panel.display === 'heatmap' on any symbol panel (same symbols as the table).
+        function migrateLegacySavedState() {
+            let dirty = false;
+            for (const pid of state.layout) {
+                const p = state.panels[pid];
+                if (!p || p.type !== 'heatmap') continue;
+                dirty = true;
+                const srcId = p.sourcePanelId;
+                let syms = [];
+                let newType = 'stocks';
+                if (typeof srcId === 'string' && srcId.startsWith('default:')) {
+                    newType = srcId.slice('default:'.length);
+                    if (!DEFAULT_SYMBOLS[newType]) newType = 'stocks';
+                    syms = [...(DEFAULT_SYMBOLS[newType] || [])];
+                } else if (srcId && state.panels[srcId]) {
+                    const src = state.panels[srcId];
+                    newType = (src.type && DEFAULT_SYMBOLS[src.type]) ? src.type : 'stocks';
+                    syms = [...(src.symbols || [])];
+                } else {
+                    syms = [...DEFAULT_SYMBOLS.stocks];
+                    newType = 'stocks';
+                }
+                if (!PANEL_TYPES[newType]) newType = 'stocks';
+                p.type = newType;
+                p.symbols = syms;
+                p.display = 'heatmap';
+                p.sort = { key: null, dir: null };
+                delete p.sourcePanelId;
+                if (p.memory && p.memory.heatmap) delete p.memory.heatmap;
+            }
+            for (const p of Object.values(state.panels)) {
+                if (!p) continue;
+                if (!PANEL_TYPES[p.type]?.usesSymbols) {
+                    if (p.display != null) {
+                        delete p.display;
+                        dirty = true;
+                    }
+                    continue;
+                }
+                if (p.display != null && p.display !== 'heatmap') {
+                    delete p.display;
+                    dirty = true;
+                }
+            }
+            if (dirty) saveState();
         }
 
         function saveState() {
@@ -1416,6 +1480,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 }
                 if (!confirm('Replace current layout with imported one? Your current layout will be overwritten.')) return;
                 state = mergeState(structuredClone(DEFAULT_STATE), incoming);
+                migrateLegacySavedState();
                 saveState();
                 renderAllPanels();
                 refreshAll();
@@ -1884,17 +1949,163 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
         const NEWS_FRESH_WINDOW = 'when:7d';   // Google News RSS recency operator
         const NEWS_MAX_AGE_MS   = 14 * 24 * 60 * 60 * 1000;  // 14d safety filter
+        // Watchlist: batch tickers so one long URL / bad token doesn't nuke the whole feed;
+        // on batch failure or empty parse, fall back to per-symbol fetches.
+        const WATCHLIST_NEWS_BATCH = 4;
+        const WATCHLIST_NEWS_PAUSE_MS = 120;
+        const WATCHLIST_NEWS_ABS_MAX = 120;   // hard ceiling for merged watchlist headlines
+
+        // Symbols from all WATCHLIST (type stocks) panels, layout order, de-duped.
+        function collectWatchlistSymbolsForNews() {
+            const out = [];
+            const seen = new Set();
+            for (const pid of state.layout) {
+                const p = state.panels[pid];
+                if (!p || p.type !== 'stocks' || !Array.isArray(p.symbols)) continue;
+                for (const s of p.symbols) {
+                    if (!s || seen.has(s)) continue;
+                    seen.add(s);
+                    out.push(s);
+                }
+            }
+            return out;
+        }
+
+        function parseNewsRssXml(xml, topicObj) {
+            const doc = new DOMParser().parseFromString(xml, 'text/xml');
+            const items = Array.from(doc.querySelectorAll('item'));
+            const nowMs = Date.now();
+            return items.map(it => {
+                const title = it.querySelector('title')?.textContent?.trim() || '(untitled)';
+                const link  = it.querySelector('link')?.textContent?.trim() || '#';
+                const pub   = it.querySelector('pubDate')?.textContent?.trim();
+                const src   = it.querySelector('source')?.textContent?.trim()
+                              || topicObj.sourceLabel
+                              || extractSource(title);
+                const pubMs = pub ? Date.parse(pub) : NaN;
+                return {
+                    title: cleanHeadline(title, src),
+                    source: src,
+                    publishedAt: Number.isFinite(pubMs) ? new Date(pubMs).toISOString() : new Date().toISOString(),
+                    pubMs: Number.isFinite(pubMs) ? pubMs : nowMs,
+                    url: link,
+                };
+            });
+        }
+
+        function dedupeNewsByUrl(parsed) {
+            const map = new Map();
+            for (const a of parsed) {
+                const key = a.url && a.url !== '#' ? a.url : `${a.title}|${a.pubMs}`;
+                if (!map.has(key)) map.set(key, a);
+            }
+            return [...map.values()];
+        }
+
+        function finalizeNewsArticles(parsed, count) {
+            const nowMs = Date.now();
+            return parsed
+                .filter(a => nowMs - a.pubMs <= NEWS_MAX_AGE_MS)
+                .sort((a, b) => b.pubMs - a.pubMs)
+                .slice(0, count)
+                .map(({ pubMs, ...rest }) => rest);
+        }
+
+        async function fetchGoogleNewsRssForQuery(searchQuery, topicObj) {
+            const q = `${searchQuery} ${NEWS_FRESH_WINDOW}`;
+            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+            const xml = await fetchViaProxy(rssUrl, { parseJson: false });
+            return parseNewsRssXml(xml, topicObj);
+        }
+
+        async function fetchWatchlistNewsRSS(count, topicObj, panelId = null) {
+            const syms = collectWatchlistSymbolsForNews();
+            const batches = [];
+            for (let i = 0; i < syms.length; i += WATCHLIST_NEWS_BATCH) {
+                batches.push(syms.slice(i, i + WATCHLIST_NEWS_BATCH));
+            }
+            const maxCap = Math.min(WATCHLIST_NEWS_ABS_MAX, count * Math.max(1, batches.length));
+            const cacheKey = `watchlist|${syms.join(',')}|${count}|cap${maxCap}`;
+            if (!syms.length) {
+                return [];
+            }
+            const cached = newsCache[cacheKey];
+            if (cached && Date.now() - cached.ts < 60_000) return cached.articles;
+
+            // Rolling pool: seed with whatever's already on-screen so a single bad
+            // refresh can never blank the panel. Old items expire via NEWS_MAX_AGE_MS
+            // inside finalizeNewsArticles, so the list turns over on its own.
+            const panel = panelId ? state.panels[panelId] : null;
+            const existingDisplay = Array.isArray(panel?._articles) ? panel._articles : [];
+            const pool = existingDisplay.map(a => {
+                const pubMs = Date.parse(a.publishedAt);
+                return { ...a, pubMs: Number.isFinite(pubMs) ? pubMs : Date.now() };
+            });
+
+            function watchlistProgressRender(capSlice) {
+                if (!panel || panel.topic !== 'watchlist') return;
+                const fresh = finalizeNewsArticles(dedupeNewsByUrl(pool), capSlice);
+                panel._articles = fresh;
+                rerenderPanelBody(panelId);
+            }
+
+            // Only show LOADING when we truly have nothing yet — never blank a
+            // populated panel during a refresh tick.
+            if (panel && !existingDisplay.length) {
+                panel._articles = null;
+                rerenderPanelBody(panelId);
+            }
+
+            async function pullOneSymbol(sym) {
+                try {
+                    const parsed = await fetchGoogleNewsRssForQuery(`${sym} stock`, topicObj);
+                    pool.push(...parsed);
+                } catch (e) {
+                    console.warn('Watchlist news: symbol fetch failed', sym, e);
+                }
+            }
+
+            for (let bi = 0; bi < batches.length; bi++) {
+                const batch = batches[bi];
+                let parsed = [];
+                try {
+                    parsed = await fetchGoogleNewsRssForQuery(`${batch.join(' ')} stock`, topicObj);
+                } catch (e) {
+                    console.warn('Watchlist news: batch fetch failed, trying per-symbol', batch, e);
+                }
+                if (!parsed.length) {
+                    for (let si = 0; si < batch.length; si++) {
+                        await pullOneSymbol(batch[si]);
+                        await new Promise(r => setTimeout(r, WATCHLIST_NEWS_PAUSE_MS));
+                        const capSlice = Math.min(maxCap, Math.max(existingDisplay.length, count * bi + si + 1));
+                        watchlistProgressRender(capSlice);
+                    }
+                } else {
+                    pool.push(...parsed);
+                    await new Promise(r => setTimeout(r, WATCHLIST_NEWS_PAUSE_MS));
+                    const capSlice = Math.min(maxCap, Math.max(existingDisplay.length, count * (bi + 1)));
+                    watchlistProgressRender(capSlice);
+                }
+            }
+
+            const fresh = finalizeNewsArticles(dedupeNewsByUrl(pool), maxCap);
+            if (fresh.length) {
+                newsCache[cacheKey] = { articles: fresh, ts: Date.now() };
+            }
+            return fresh;
+        }
 
         async function fetchNewsRSS(topic, count) {
+            const topicObj = NEWS_TOPICS[topic] || { query: topic, label: topic };
+
+            if (topicObj.fromWatchlist) {
+                return fetchWatchlistNewsRSS(count, topicObj);
+            }
+
             const cacheKey = `${topic}|${count}`;
             const cached = newsCache[cacheKey];
             if (cached && Date.now() - cached.ts < 60_000) return cached.articles;
 
-            const topicObj = NEWS_TOPICS[topic] || { query: topic, label: topic };
-            // A topic with `feedUrl` is a direct RSS source (e.g. EIA Today in
-            // Energy) — fetch the origin feed as-is. Otherwise fall back to
-            // the Google-News search path, and append the when: operator so
-            // the RSS leads with recent stories instead of "pillar" articles.
             let rssUrl;
             if (topicObj.feedUrl) {
                 rssUrl = topicObj.feedUrl;
@@ -1902,35 +2113,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const q = `${topicObj.query} ${NEWS_FRESH_WINDOW}`;
                 rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
             }
+
             try {
                 const xml = await fetchViaProxy(rssUrl, { parseJson: false });
-                const doc = new DOMParser().parseFromString(xml, 'text/xml');
-                const items = Array.from(doc.querySelectorAll('item'));
-                const nowMs = Date.now();
-                const parsed = items.map(it => {
-                    const title = it.querySelector('title')?.textContent?.trim() || '(untitled)';
-                    const link  = it.querySelector('link')?.textContent?.trim() || '#';
-                    const pub   = it.querySelector('pubDate')?.textContent?.trim();
-                    const src   = it.querySelector('source')?.textContent?.trim()
-                                  || topicObj.sourceLabel
-                                  || extractSource(title);
-                    const pubMs = pub ? Date.parse(pub) : NaN;
-                    return {
-                        title: cleanHeadline(title, src),
-                        source: src,
-                        publishedAt: Number.isFinite(pubMs) ? new Date(pubMs).toISOString() : new Date().toISOString(),
-                        pubMs: Number.isFinite(pubMs) ? pubMs : nowMs,
-                        url: link,
-                    };
-                });
-                // Drop anything older than NEWS_MAX_AGE_MS — belt-and-braces
-                // in case Google ignores when: on a given query — then sort
-                // newest first and cap to the requested count.
-                const fresh = parsed
-                    .filter(a => nowMs - a.pubMs <= NEWS_MAX_AGE_MS)
-                    .sort((a, b) => b.pubMs - a.pubMs)
-                    .slice(0, count)
-                    .map(({ pubMs, ...rest }) => rest);
+                const parsed = parseNewsRssXml(xml, topicObj);
+                const fresh = finalizeNewsArticles(parsed, count);
                 if (fresh.length) {
                     newsCache[cacheKey] = { articles: fresh, ts: Date.now() };
                     return fresh;
@@ -2019,8 +2206,23 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             await Promise.all(newsPanels.map(async pid => {
                 const p = state.panels[pid];
                 const count = state.config.newsCount;
-                const articles = await fetchNewsRSS(p.topic || 'market', count);
-                p._articles = articles;
+                const topic = p.topic || 'market';
+                const topicObj = NEWS_TOPICS[topic] || { query: topic };
+                if (topicObj.fromWatchlist) {
+                    // Function mutates p._articles progressively (rolling pool) and
+                    // returns the final merged list. If this round brought nothing
+                    // new AND we had no articles before, res will be []; otherwise
+                    // the previously-shown stories remain in the pool.
+                    const res = await fetchWatchlistNewsRSS(count, topicObj, pid);
+                    if (res.length || !Array.isArray(p._articles)) {
+                        p._articles = res;
+                    }
+                } else {
+                    const res = await fetchNewsRSS(topic, count);
+                    if (res.length || !Array.isArray(p._articles) || !p._articles.length) {
+                        p._articles = res;
+                    }
+                }
             }));
         }
 
@@ -2206,16 +2408,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const f = POLYMARKET_FILTERS.find(x => x.key === (panel.filter || 'all'));
                 return ` <span style="color:var(--text-secondary);font-weight:400;">· ${f ? f.label : panel.filter}</span>`;
             }
-            if (panel.type === 'heatmap' && panel.sourcePanelId) {
-                const sid = panel.sourcePanelId;
-                if (typeof sid === 'string' && sid.startsWith('default:')) {
-                    const t = sid.slice('default:'.length);
-                    const label = PANEL_TYPES[t]?.label;
-                    if (label) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${label} (DEFAULT)</span>`;
-                } else {
-                    const src = state.panels[sid];
-                    if (src) return ` <span style="color:var(--text-secondary);font-weight:400;">· SRC ${PANEL_TYPES[src.type].label}</span>`;
-                }
+            if (PANEL_TYPES[panel.type]?.usesSymbols && panel.display === 'heatmap') {
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· HEAT MAP</span>${extTag}`;
             }
             if (panel.type === 'seismic') {
                 const m = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
@@ -2250,11 +2444,13 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     </span>
                 `).join('');
                 const sort = panel.sort || { key: null, dir: null };
+                const heatOn = panel.display === 'heatmap';
                 const symLabel = sort.key === 'symbol' ? (sort.dir === 'desc' ? 'Z→A' : 'A→Z') : 'A↕Z';
                 const pctLabel = sort.key === 'change' ? (sort.dir === 'desc' ? '% HIGH→LOW' : '% LOW→HIGH') : '% ↕';
-                const symActive = sort.key === 'symbol' ? ' active' : '';
-                const pctActive = sort.key === 'change' ? ' active' : '';
-                const noneActive = !sort.key ? ' active' : '';
+                const symActive = !heatOn && sort.key === 'symbol' ? ' active' : '';
+                const pctActive = !heatOn && sort.key === 'change' ? ' active' : '';
+                const noneActive = !heatOn && !sort.key ? ' active' : '';
+                const heatActive = heatOn ? ' active' : '';
                 symbolSection = `
                     <div class="tray-row">
                         <span class="tray-label">ADD</span>
@@ -2273,10 +2469,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         <div class="tray-tags" id="tags-${pid}">${tags || '<span class="no-data">(none)</span>'}</div>
                     </div>
                     <div class="tray-row">
-                        <span class="tray-label">SORT</span>
-                        <button class="chip${noneActive}" onclick="cyclePanelSort('${pid}','none')" title="Entered order">ENTERED</button>
-                        <button class="chip${symActive}" onclick="cyclePanelSort('${pid}','symbol')" title="Click to cycle A→Z / Z→A">${symLabel}</button>
-                        <button class="chip${pctActive}" onclick="cyclePanelSort('${pid}','change')" title="Click to cycle high→low / low→high">${pctLabel}</button>
+                        <span class="tray-label">DISPLAY</span>
+                        <button class="chip${noneActive}" onclick="cyclePanelSort('${pid}','none')" title="Table · entered order">ENTERED</button>
+                        <button class="chip${symActive}" onclick="cyclePanelSort('${pid}','symbol')" title="Table · click to cycle A→Z / Z→A">${symLabel}</button>
+                        <button class="chip${pctActive}" onclick="cyclePanelSort('${pid}','change')" title="Table · click to cycle high→low / low→high">${pctLabel}</button>
+                        <button class="chip${heatActive}" onclick="togglePanelHeatmapDisplay('${pid}')" title="Sector treemap · same symbols">HEAT MAP</button>
                     </div>
                     <div class="tray-msg" id="msg-${pid}"></div>
                 `;
@@ -2365,41 +2562,6 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 `;
             }
 
-            let heatmapSection = '';
-            if (panel.type === 'heatmap') {
-                // List live symbol panels first, then synthetic default-list
-                // options for every symbol-bearing type that has no live panel
-                // — so WATCHLIST is always selectable even if the user's only
-                // stocks panel was converted to heatmap.
-                const liveOptions = [];
-                const typesSeen = new Set();
-                for (const id of state.layout) {
-                    const p = state.panels[id];
-                    if (!p || !PANEL_TYPES[p.type]?.usesSymbols) continue;
-                    const selected = panel.sourcePanelId === id ? ' selected' : '';
-                    liveOptions.push(`<option value="${id}"${selected}>${PANEL_TYPES[p.type].label}</option>`);
-                    typesSeen.add(p.type);
-                }
-                const defaultOptions = [];
-                for (const t of PANEL_TYPE_ORDER) {
-                    if (!PANEL_TYPES[t].usesSymbols) continue;
-                    if (typesSeen.has(t)) continue;
-                    const val = `default:${t}`;
-                    const selected = panel.sourcePanelId === val ? ' selected' : '';
-                    defaultOptions.push(`<option value="${val}"${selected}>${PANEL_TYPES[t].label} (default)</option>`);
-                }
-                heatmapSection = `
-                    <div class="tray-row">
-                        <span class="tray-label">SOURCE</span>
-                        <select class="tray-select" onchange="setHeatmapSource('${pid}', this.value)">
-                            <option value="">(pick panel)</option>
-                            ${liveOptions.join('')}
-                            ${defaultOptions.join('')}
-                        </select>
-                    </div>
-                `;
-            }
-
             let extHoursSection = '';
             if (typeMeta?.supportsExtendedHours) {
                 const on = !!panel.extendedHours;
@@ -2424,7 +2586,6 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     ${seismicSection}
                     ${stormsSection}
                     ${calendarSection}
-                    ${heatmapSection}
                     ${extHoursSection}
                 </div>
             `;
@@ -2439,12 +2600,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 case 'forex':
                 case 'commodities':
                 case 'bonds':
-                    return renderQuoteTable(panel);
+                    return panel.display === 'heatmap' ? renderHeatMap(panel) : renderQuoteTable(panel);
                 case 'news':       return renderNews(panel);
                 case 'calendar':   return renderCalendar(panel);
                 case 'movers':     return renderMovers();
                 case 'prediction': return renderPredictionPanel(panel);
-                case 'heatmap':    return renderHeatMap(panel);
                 case 'seismic':    return renderSeismic(panel);
                 case 'storms':     return renderStorms(panel);
                 default:           return `<div class="no-data">Unknown panel type: ${panel.type}</div>`;
@@ -2561,31 +2721,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         const HEATMAP_MAX_TILES = 15;
 
         function renderHeatMap(panel) {
-            const srcId = panel.sourcePanelId;
-            if (!srcId) {
-                return `<div class="no-data">Pick a source panel in the tray (SOURCE).</div>`;
-            }
-            // Synthetic "default:stocks" etc. — use built-in default symbols
-            // for that type when no live panel of that type exists.
-            let symbols;
-            if (typeof srcId === 'string' && srcId.startsWith('default:')) {
-                const t = srcId.slice('default:'.length);
-                if (!PANEL_TYPES[t]?.usesSymbols) {
-                    return `<div class="no-data">Unknown default symbol set.</div>`;
-                }
-                symbols = (DEFAULT_SYMBOLS[t] || []).slice();
-            } else {
-                const src = state.panels[srcId];
-                if (!src) {
-                    return `<div class="no-data">Source panel no longer exists — pick another.</div>`;
-                }
-                if (!PANEL_TYPES[src.type]?.usesSymbols) {
-                    return `<div class="no-data">Source panel is not a symbol panel.</div>`;
-                }
-                symbols = (src.symbols || []).slice();
-            }
+            const symbols = (panel.symbols || []).slice();
             if (!symbols.length) {
-                return `<div class="no-data">Source panel has no symbols.</div>`;
+                return `<div class="no-data">No symbols — add tickers in the tray or switch DISPLAY to a table.</div>`;
             }
             const items = symbols.map(sym => {
                 const q = quoteCache[sym];
@@ -2613,7 +2751,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 totalTiles--;
             }
 
-            const panelId = Object.keys(state.panels).find(k => state.panels[k] === panel) || 'heatmap';
+            const panelId = Object.keys(state.panels).find(k => state.panels[k] === panel) || 'panel';
             const W = 560, H = 320;
             // Layout sector buckets across outer rect.
             const outer = { x: 0, y: 0, w: W, h: H };
@@ -2774,7 +2912,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     heatmapHydrating.delete(sym);
                     // Re-render just the heatmap panel (or all, cheap).
                     const panel = state.panels[pid];
-                    if (panel && panel.type === 'heatmap') {
+                    if (panel && PANEL_TYPES[panel.type]?.usesSymbols && panel.display === 'heatmap') {
                         const content = document.getElementById(`content-${pid}`);
                         if (content) content.innerHTML = renderPanelContent(pid);
                     }
@@ -3422,6 +3560,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const articles = panel._articles;
             if (!articles) return `<div class="loading">LOADING NEWS…</div>`;
             if (!articles.length) {
+                if (panel.topic === 'watchlist' && !collectWatchlistSymbolsForNews().length) {
+                    return `<div class="no-data">WATCHLIST topic needs symbols — add tickers to a WATCHLIST panel, then [R] to refresh.</div>`;
+                }
                 return `<div class="error-message">NEWS FEED UNAVAILABLE — try another topic or [R] to refresh.</div>`;
             }
             return articles.map(a => `
@@ -3782,7 +3923,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             // Stash the current panel's symbols/topic under its old type so
             // switching back restores the user's additions instead of defaults.
             if (PANEL_TYPES[oldType].usesSymbols && Array.isArray(panel.symbols)) {
-                panel.memory[oldType] = { symbols: [...panel.symbols] };
+                const mem = { symbols: [...panel.symbols] };
+                if (panel.sort && panel.sort.key) mem.sort = { ...panel.sort };
+                if (panel.display === 'heatmap') mem.display = 'heatmap';
+                panel.memory[oldType] = mem;
             } else if (oldType === 'news' && panel.topic) {
                 panel.memory.news = { topic: panel.topic };
             }
@@ -3794,12 +3938,25 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
             panel.type = newType;
             if (PANEL_TYPES[newType].usesSymbols) {
-                const remembered = panel.memory[newType] && panel.memory[newType].symbols;
-                panel.symbols = remembered
-                    ? [...remembered]
+                const m = panel.memory[newType];
+                const rememberedSyms = m && m.symbols;
+                panel.symbols = rememberedSyms
+                    ? [...rememberedSyms]
                     : (DEFAULT_SYMBOLS[newType] ? [...DEFAULT_SYMBOLS[newType]] : []);
+                if (m && m.sort && m.sort.key) {
+                    panel.sort = { key: m.sort.key, dir: m.sort.dir || 'asc' };
+                } else {
+                    panel.sort = { key: null, dir: null };
+                }
+                if (m && m.display === 'heatmap') {
+                    panel.display = 'heatmap';
+                } else {
+                    delete panel.display;
+                }
             } else {
                 delete panel.symbols;
+                delete panel.sort;
+                delete panel.display;
             }
             if (newType === 'news') {
                 panel.topic = (panel.memory.news && panel.memory.news.topic) || panel.topic || 'market';
@@ -3814,13 +3971,6 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (panel.filter != null) panel.memory.prediction = { filter: panel.filter, limit: panel.limit };
                 delete panel.filter;
                 delete panel.limit;
-            }
-            if (newType === 'heatmap') {
-                const mem = panel.memory.heatmap;
-                panel.sourcePanelId = mem?.sourcePanelId || panel.sourcePanelId || null;
-            } else {
-                if (panel.sourcePanelId) panel.memory.heatmap = { sourcePanelId: panel.sourcePanelId };
-                delete panel.sourcePanelId;
             }
             if (newType === 'seismic') {
                 const mem = panel.memory.seismic;
@@ -3875,14 +4025,6 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             refreshPredictionPanels().then(() => renderAllPanels());
         }
 
-        function setHeatmapSource(pid, sourcePanelId) {
-            const panel = state.panels[pid];
-            if (!panel || panel.type !== 'heatmap') return;
-            panel.sourcePanelId = sourcePanelId || null;
-            saveState();
-            renderAllPanels();
-        }
-
         function setSeismicMinMag(pid, minMag) {
             const panel = state.panels[pid];
             if (!panel || panel.type !== 'seismic') return;
@@ -3926,6 +4068,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         function cyclePanelSort(pid, key) {
             const panel = state.panels[pid];
             if (!panel) return;
+            delete panel.display;
             const cur = panel.sort || { key: null, dir: null };
             let next;
             if (key === 'none') {
@@ -3936,6 +4079,19 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 next = { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' };
             }
             panel.sort = next;
+            saveState();
+            renderAllPanels();
+        }
+
+        // DISPLAY row: sector treemap uses the same symbol list as the table (toggle).
+        function togglePanelHeatmapDisplay(pid) {
+            const panel = state.panels[pid];
+            if (!panel || !PANEL_TYPES[panel.type]?.usesSymbols) return;
+            if (panel.display === 'heatmap') {
+                delete panel.display;
+            } else {
+                panel.display = 'heatmap';
+            }
             saveState();
             renderAllPanels();
         }
