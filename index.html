@@ -309,6 +309,38 @@
             max-height: 450px;
         }
 
+        /* GLOBE display (seismic / storms): fill panel body without inner scroll. */
+        .panel-content.panel-content--globe {
+            overflow: hidden;
+            max-height: none;
+            min-height: 320px;
+        }
+
+        .geo-globe-root {
+            position: relative;
+            width: 100%;
+            min-height: 300px;
+        }
+
+        .geo-globe-canvas {
+            display: block;
+            width: 100%;
+            height: 300px;
+            cursor: grab;
+            background: radial-gradient(ellipse at 50% 45%, #0a1a0a 0%, #050805 55%, #000 100%);
+        }
+
+        .geo-globe-canvas:active { cursor: grabbing; }
+
+        .geo-globe-hint {
+            position: absolute;
+            left: 8px;
+            bottom: 4px;
+            font-size: 9px;
+            color: var(--text-dim);
+            pointer-events: none;
+        }
+
         .quote-row {
             padding: 4px 4px;
             border-bottom: 1px dashed var(--border-color);
@@ -1122,12 +1154,15 @@ WHAT'S IN THE LIST
     (M4.5/M5/M5.5/M6/M7). Each row: magnitude badge
     (dim → green → red → red-fill), depth km, TSUNAMI tag
     when USGS flags one, click-through to USGS page.
+    DISPLAY → GLOBE: same feed, rotating globe from lat/lon.
 
   TROPICAL CYCLONES — NOAA NHC active-storms feed. BASIN
     chip (All / Atlantic / E. Pacific / C. Pacific). Each
     row: Saffir-Simpson CAT from 1-min sustained wind
     (or TD/TS for sub-hurricane), wind mph, pressure mb,
     click-through to NHC public advisory.
+    DISPLAY → GLOBE: storm centers (latitude_numeric /
+    longitude_numeric from NHC JSON).
 
 Both refresh on the same 60s tick as quotes and news.</pre>
                 </div>
@@ -1239,8 +1274,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             calendar:    { label: 'SCHEDULED RELEASES',  usesSymbols: false, usesNews: false },
             movers:      { label: 'MOVERS & SENTIMENT',  usesSymbols: false, usesNews: false },
             prediction:  { label: 'PREDICTION MARKETS',  usesSymbols: false, usesNews: false },
-            seismic:     { label: 'SEISMIC EVENTS',      usesSymbols: false, usesNews: false },
-            storms:      { label: 'TROPICAL CYCLONES',   usesSymbols: false, usesNews: false },
+            seismic:     { label: 'SEISMIC EVENTS',      usesSymbols: false, usesNews: false, supportsGeoDisplay: true },
+            storms:      { label: 'TROPICAL CYCLONES',   usesSymbols: false, usesNews: false, supportsGeoDisplay: true },
         };
 
         const PANEL_TYPE_ORDER = ['stocks','indices','crypto','forex','commodities','bonds','news','prediction','calendar','movers','seismic','storms'];
@@ -1427,8 +1462,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (!p) continue;
                 if (!PANEL_TYPES[p.type]?.usesSymbols) {
                     if (p.display != null) {
-                        delete p.display;
-                        dirty = true;
+                        // Geo panels may persist DISPLAY → GLOBE (same key as heatmap row pattern).
+                        const keepGlobe = p.display === 'globe' && PANEL_TYPES[p.type]?.supportsGeoDisplay;
+                        if (!keepGlobe) {
+                            delete p.display;
+                            dirty = true;
+                        }
                     }
                     continue;
                 }
@@ -2249,6 +2288,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 return features.map(f => {
                     const p = f.properties || {};
                     const c = f.geometry?.coordinates || [];
+                    const lon = Number.isFinite(c[0]) ? c[0] : null;
+                    const lat = Number.isFinite(c[1]) ? c[1] : null;
                     return {
                         id: f.id,
                         mag: typeof p.mag === 'number' ? p.mag : null,
@@ -2257,6 +2298,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         tsunami: p.tsunami === 1,
                         url: p.url || null,
                         depth: Number.isFinite(c[2]) ? c[2] : null,
+                        lon,
+                        lat,
                     };
                 }).filter(e => e.mag != null && e.time != null);
             } catch {
@@ -2282,6 +2325,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const list = data?.activeStorms || [];
                 return list.map(s => {
                     const id = String(s.id || '');
+                    const lat = typeof s.latitude_numeric === 'number' ? s.latitude_numeric : null;
+                    const lon = typeof s.longitude_numeric === 'number' ? s.longitude_numeric : null;
                     return {
                         id,
                         binNumber: s.binNumber || '',
@@ -2295,6 +2340,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         lastUpdate: s.lastUpdate || null,
                         basin: id.slice(0, 2).toLowerCase(),      // 'al' | 'ep' | 'cp'
                         url: s.publicAdvisory?.url || s.forecastAdvisory?.url || null,
+                        lat,
+                        lon,
                     };
                 });
             } catch {
@@ -2353,6 +2400,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         // ============================================================
 
         function renderAllPanels() {
+            disposeGeoGlobes();
             const grid = document.getElementById('mainGrid');
             grid.innerHTML = '';
             for (const pid of state.layout) {
@@ -2362,6 +2410,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (state.ui.openTray && document.getElementById(`panel-${state.ui.openTray}`)) {
                 document.getElementById(`panel-${state.ui.openTray}`).classList.add('tray-open');
             }
+            mountGeoGlobes();
         }
 
         function renderPanel(pid) {
@@ -2396,7 +2445,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
             // Content
             const content = document.createElement('div');
-            content.className = 'panel-content';
+            const globeBody = PANEL_TYPES[panel.type]?.supportsGeoDisplay && panel.display === 'globe';
+            content.className = 'panel-content' + (globeBody ? ' panel-content--globe' : '');
             content.id = `content-${pid}`;
             content.innerHTML = renderPanelContent(pid);
             root.appendChild(content);
@@ -2421,11 +2471,13 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
             if (panel.type === 'seismic') {
                 const m = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
-                return ` <span style="color:var(--text-secondary);font-weight:400;">· M${m.toFixed(1)}+</span>`;
+                const g = panel.display === 'globe' ? ' · GLOBE' : '';
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· M${m.toFixed(1)}+${g}</span>`;
             }
             if (panel.type === 'storms') {
                 const b = STORM_BASINS.find(x => x.key === (panel.basin || 'all'));
-                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${b ? b.label : panel.basin}</span>`;
+                const g = panel.display === 'globe' ? ' · GLOBE' : '';
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${b ? b.label : panel.basin}${g}</span>`;
             }
             if (panel.type === 'calendar' && panel.category && panel.category !== 'all') {
                 const c = CALENDAR_CATEGORIES.find(x => x.key === panel.category);
@@ -2529,11 +2581,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     const active = current === m.key ? ' active' : '';
                     return `<button class="chip${active}" onclick="setSeismicMinMag('${pid}',${m.key})">${m.label}</button>`;
                 }).join('');
+                const listActive = panel.display !== 'globe' ? ' active' : '';
+                const globeActive = panel.display === 'globe' ? ' active' : '';
                 seismicSection = `
                     <div class="tray-row">
                         <span class="tray-label">MIN MAG</span>
                         ${chips}
                         <span class="tray-hint">USGS M4.5+ feed · last 7 days</span>
+                    </div>
+                    <div class="tray-row">
+                        <span class="tray-label">DISPLAY</span>
+                        <button class="chip${listActive}" onclick="setGeoPanelDisplay('${pid}','list')" title="Event list">LIST</button>
+                        <button class="chip${globeActive}" onclick="setGeoPanelDisplay('${pid}','globe')" title="Rotating globe · USGS lat/lon">GLOBE</button>
                     </div>
                 `;
             }
@@ -2545,11 +2604,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     const active = current === b.key ? ' active' : '';
                     return `<button class="chip${active}" onclick="setStormBasin('${pid}','${b.key}')">${b.label}</button>`;
                 }).join('');
+                const listActiveS = panel.display !== 'globe' ? ' active' : '';
+                const globeActiveS = panel.display === 'globe' ? ' active' : '';
                 stormsSection = `
                     <div class="tray-row">
                         <span class="tray-label">BASIN</span>
                         ${chips}
                         <span class="tray-hint">NOAA NHC · active cyclones only</span>
+                    </div>
+                    <div class="tray-row">
+                        <span class="tray-label">DISPLAY</span>
+                        <button class="chip${listActiveS}" onclick="setGeoPanelDisplay('${pid}','list')" title="Storm list">LIST</button>
+                        <button class="chip${globeActiveS}" onclick="setGeoPanelDisplay('${pid}','globe')" title="Rotating globe · NHC lat/lon">GLOBE</button>
                     </div>
                 `;
             }
@@ -2613,8 +2679,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 case 'calendar':   return renderCalendar(panel);
                 case 'movers':     return renderMovers();
                 case 'prediction': return renderPredictionPanel(panel);
-                case 'seismic':    return renderSeismic(panel);
-                case 'storms':     return renderStorms(panel);
+                case 'seismic':    return renderSeismic(panel, pid);
+                case 'storms':     return renderStorms(panel, pid);
                 default:           return `<div class="no-data">Unknown panel type: ${panel.type}</div>`;
             }
         }
@@ -3584,10 +3650,324 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         }
 
         // ============================================================
+        // GEO GLOBE (DISPLAY mode for supportsGeoDisplay panel types)
+        // Canvas 2D + auto-rotate; points from collectGeoPointsForPanel(panel).
+        // Continent shapes: Natural Earth 110m coastline GeoJSON (public domain),
+        // loaded once from jsDelivr (CORS *) — trivial context for lat/lon.
+        // ============================================================
+
+        const GEO_NE_COASTLINE_URL = 'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@v4.0.0/geojson/ne_110m_coastline.geojson';
+
+        /** @type {null | Array<Array<[number, number]>>} null = not loaded yet */
+        let geoCoastPolylines = null;
+        let geoCoastPolyPromise = null;
+
+        function geoSubsampleCoastRing(coords) {
+            if (!coords || coords.length < 2) return [];
+            const step = coords.length > 400 ? 8 : coords.length > 150 ? 4 : coords.length > 60 ? 2 : 1;
+            const out = [];
+            for (let i = 0; i < coords.length; i += step) {
+                const c = coords[i];
+                if (c && c.length >= 2) out.push([Number(c[0]), Number(c[1])]);
+            }
+            const last = coords[coords.length - 1];
+            if (last && last.length >= 2) {
+                const olast = out[out.length - 1];
+                if (!olast || olast[0] !== last[0] || olast[1] !== last[1]) {
+                    out.push([Number(last[0]), Number(last[1])]);
+                }
+            }
+            return out;
+        }
+
+        /** One shared fetch for all globe panels; failures leave geoCoastPolylines as []. */
+        function ensureGeoCoastlinesLoaded() {
+            if (geoCoastPolyPromise) return geoCoastPolyPromise;
+            geoCoastPolyPromise = fetch(GEO_NE_COASTLINE_URL, { cache: 'force-cache' })
+                .then(r => (r.ok ? r.json() : null))
+                .then(data => {
+                    if (!data || !Array.isArray(data.features)) {
+                        geoCoastPolylines = [];
+                        return;
+                    }
+                    const out = [];
+                    for (const f of data.features) {
+                        const g = f.geometry;
+                        if (!g) continue;
+                        if (g.type === 'LineString' && Array.isArray(g.coordinates)) {
+                            const ring = geoSubsampleCoastRing(g.coordinates);
+                            if (ring.length >= 2) out.push(ring);
+                        } else if (g.type === 'MultiLineString' && Array.isArray(g.coordinates)) {
+                            for (const line of g.coordinates) {
+                                const ring = geoSubsampleCoastRing(line);
+                                if (ring.length >= 2) out.push(ring);
+                            }
+                        }
+                    }
+                    geoCoastPolylines = out;
+                })
+                .catch(() => {
+                    geoCoastPolylines = [];
+                });
+            return geoCoastPolyPromise;
+        }
+
+        const geoGlobeControllers = new Map();
+
+        function disposeGeoGlobes() {
+            geoGlobeControllers.forEach(c => {
+                try { c.dispose(); } catch (e) { /* noop */ }
+            });
+            geoGlobeControllers.clear();
+        }
+
+        function collectGeoPointsForPanel(panel) {
+            if (!panel || !PANEL_TYPES[panel.type]?.supportsGeoDisplay) return [];
+            if (panel.type === 'seismic') {
+                const events = panel._events;
+                const minMag = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
+                if (!Array.isArray(events)) return [];
+                return events
+                    .filter(e => e.mag != null && e.mag >= minMag && e.lat != null && e.lon != null)
+                    .slice(0, 100)
+                    .map(e => ({ lat: e.lat, lon: e.lon, mag: e.mag, kind: 'quake' }));
+            }
+            if (panel.type === 'storms') {
+                const storms = panel._storms;
+                const basin = panel.basin || 'all';
+                if (!Array.isArray(storms)) return [];
+                const filtered = basin === 'all' ? storms : storms.filter(s => s.basin === basin);
+                return filtered
+                    .filter(s => s.lat != null && s.lon != null)
+                    .map(s => ({
+                        lat: s.lat,
+                        lon: s.lon,
+                        kind: 'storm',
+                        intensity: s.intensity,
+                        classification: s.classification,
+                        name: s.name,
+                    }));
+            }
+            return [];
+        }
+
+        function renderGeoGlobeShell(pid) {
+            return `
+                <div class="geo-globe-root" id="globe-root-${pid}">
+                    <canvas class="geo-globe-canvas"></canvas>
+                    <div class="geo-globe-hint">drag · wheel zoom · coastlines load once</div>
+                </div>`;
+        }
+
+        function geoLatLonToXYZ(latDeg, lonDeg) {
+            const latR = latDeg * Math.PI / 180;
+            const lonR = lonDeg * Math.PI / 180;
+            const cl = Math.cos(latR);
+            return { x: cl * Math.cos(lonR), y: Math.sin(latR), z: cl * Math.sin(lonR) };
+        }
+
+        function geoRotY(p, a) {
+            const c = Math.cos(a), s = Math.sin(a);
+            return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c };
+        }
+
+        function geoRotX(p, a) {
+            const c = Math.cos(a), s = Math.sin(a);
+            return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c };
+        }
+
+        /** Camera on +X; depth = x (larger = closer); u from z, v from -y */
+        function geoProject(p, scale) {
+            return { u: p.z * scale, v: -p.y * scale, depth: p.x };
+        }
+
+        function startGeoGlobeRuntime(pid, canvas) {
+            let raf = 0;
+            const t0 = performance.now();
+            let yawOff = 0;
+            let pitchOff = 0.28;
+            let zoom = 1;
+            let dragging = false;
+            let lx = 0, ly = 0;
+
+            function resize() {
+                const pr = window.devicePixelRatio || 1;
+                const w = canvas.clientWidth || 300;
+                const h = canvas.clientHeight || 300;
+                canvas.width = Math.max(1, Math.floor(w * pr));
+                canvas.height = Math.max(1, Math.floor(h * pr));
+                const ctx = canvas.getContext('2d');
+                ctx.setTransform(pr, 0, 0, pr, 0, 0);
+            }
+
+            function onDown(e) {
+                dragging = true;
+                lx = e.clientX;
+                ly = e.clientY;
+            }
+            function onMove(e) {
+                if (!dragging) return;
+                const dx = e.clientX - lx, dy = e.clientY - ly;
+                lx = e.clientX;
+                ly = e.clientY;
+                yawOff += dx * 0.005;
+                pitchOff = Math.max(-1.15, Math.min(1.15, pitchOff - dy * 0.005));
+            }
+            function onUp() { dragging = false; }
+            function onWheel(e) {
+                e.preventDefault();
+                zoom = Math.max(0.65, Math.min(1.5, zoom + (e.deltaY < 0 ? 0.07 : -0.07)));
+            }
+
+            canvas.addEventListener('mousedown', onDown);
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            canvas.addEventListener('wheel', onWheel, { passive: false });
+
+            function dispose() {
+                cancelAnimationFrame(raf);
+                canvas.removeEventListener('mousedown', onDown);
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                canvas.removeEventListener('wheel', onWheel);
+            }
+
+            function frame() {
+                const panelSnap = state.panels[pid];
+                if (!panelSnap || panelSnap.display !== 'globe' || !PANEL_TYPES[panelSnap.type]?.supportsGeoDisplay) {
+                    dispose();
+                    geoGlobeControllers.delete(pid);
+                    return;
+                }
+                resize();
+                const w = canvas.clientWidth;
+                const h = canvas.clientHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, w, h);
+                const cx = w / 2;
+                const cy = h / 2;
+                const baseR = Math.min(w, h) * 0.38 * zoom;
+                const spin = (performance.now() - t0) * 0.00011 + yawOff;
+                const pitch = pitchOff;
+
+                ctx.beginPath();
+                ctx.arc(cx, cy, baseR * 0.98, 0, Math.PI * 2);
+                const g = ctx.createRadialGradient(cx, cy - baseR * 0.12, baseR * 0.08, cx, cy, baseR);
+                g.addColorStop(0, 'rgba(0,90,35,0.4)');
+                g.addColorStop(0.65, 'rgba(0,35,12,0.22)');
+                g.addColorStop(1, 'rgba(0,8,4,0.55)');
+                ctx.fillStyle = g;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0,255,65,0.38)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Natural Earth coastline (same spin/pitch as markers); clip to disk.
+                if (Array.isArray(geoCoastPolylines) && geoCoastPolylines.length) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, baseR * 0.98, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.strokeStyle = 'rgba(0,255,90,0.32)';
+                    ctx.lineWidth = 1;
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+                    for (const ring of geoCoastPolylines) {
+                        let started = false;
+                        ctx.beginPath();
+                        for (let i = 0; i < ring.length; i++) {
+                            const [lon, lat] = ring[i];
+                            let p = geoLatLonToXYZ(lat, lon);
+                            p = geoRotY(p, spin);
+                            p = geoRotX(p, pitch);
+                            const { u, v, depth } = geoProject(p, baseR);
+                            const vis = depth > -0.12;
+                            if (!vis) {
+                                started = false;
+                                continue;
+                            }
+                            const sx = cx + u;
+                            const sy = cy + v;
+                            if (!started) {
+                                ctx.moveTo(sx, sy);
+                                started = true;
+                            } else {
+                                ctx.lineTo(sx, sy);
+                            }
+                        }
+                        if (started) ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+
+                const pts = collectGeoPointsForPanel(panelSnap);
+                const projected = [];
+                for (const pt of pts) {
+                    let p = geoLatLonToXYZ(pt.lat, pt.lon);
+                    p = geoRotY(p, spin);
+                    p = geoRotX(p, pitch);
+                    const { u, v, depth } = geoProject(p, baseR);
+                    if (depth <= -0.14) continue;
+                    projected.push({ cx: cx + u, cy: cy + v, depth, pt });
+                }
+                projected.sort((a, b) => a.depth - b.depth);
+                for (const o of projected) {
+                    const pt = o.pt;
+                    let r, fill;
+                    if (pt.kind === 'storm') {
+                        const kt = Number(pt.intensity) || 34;
+                        r = 4 + Math.min(10, kt / 15);
+                        fill = kt >= 64 ? 'rgba(255,80,40,0.95)' : 'rgba(255,200,60,0.9)';
+                    } else {
+                        const mag = pt.mag || 4.5;
+                        r = 2 + Math.min(8, (mag - 4.2) * 2.2);
+                        fill = o.depth > 0.2
+                            ? (mag >= 7 ? 'rgba(255,50,50,0.95)' : mag >= 6 ? 'rgba(255,120,80,0.9)' : 'rgba(0,255,100,0.92)')
+                            : 'rgba(0,140,55,0.45)';
+                    }
+                    ctx.beginPath();
+                    ctx.arc(o.cx, o.cy, r, 0, Math.PI * 2);
+                    ctx.fillStyle = fill;
+                    ctx.fill();
+                }
+
+                raf = requestAnimationFrame(frame);
+            }
+
+            raf = requestAnimationFrame(frame);
+            return { dispose };
+        }
+
+        function mountGeoGlobes() {
+            let anyGlobe = false;
+            for (const pid of state.layout) {
+                const panel = state.panels[pid];
+                if (!panel || panel.display !== 'globe' || !PANEL_TYPES[panel.type]?.supportsGeoDisplay) continue;
+                anyGlobe = true;
+                const root = document.getElementById(`globe-root-${pid}`);
+                if (!root) continue;
+                const canvas = root.querySelector('canvas');
+                if (!canvas) continue;
+                if (geoGlobeControllers.has(pid)) continue;
+                const ctrl = startGeoGlobeRuntime(pid, canvas);
+                geoGlobeControllers.set(pid, ctrl);
+            }
+            if (anyGlobe) ensureGeoCoastlinesLoaded();
+        }
+
+        // ============================================================
         // RENDERING — SEISMIC EVENTS
         // ============================================================
 
-        function renderSeismic(panel) {
+        function renderSeismic(panel, pid) {
+            if (panel.display === 'globe') {
+                if (panel._events == null) {
+                    return panel._eventsFailed
+                        ? `<div class="error-message">USGS FEED UNAVAILABLE — [R] to retry.</div>`
+                        : `<div class="loading">LOADING SEISMIC EVENTS…</div>`;
+                }
+                return renderGeoGlobeShell(pid);
+            }
             const events = panel._events;
             const minMag = typeof panel.minMag === 'number' ? panel.minMag : 5.5;
             if (events == null) {
@@ -3647,7 +4027,15 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             return b ? b.label : (code || '').toUpperCase();
         }
 
-        function renderStorms(panel) {
+        function renderStorms(panel, pid) {
+            if (panel.display === 'globe') {
+                if (panel._storms == null) {
+                    return panel._stormsFailed
+                        ? `<div class="error-message">NHC FEED UNAVAILABLE — [R] to retry.</div>`
+                        : `<div class="loading">LOADING TROPICAL CYCLONES…</div>`;
+                }
+                return renderGeoGlobeShell(pid);
+            }
             const storms = panel._storms;
             const basin = panel.basin || 'all';
             if (storms == null) {
@@ -3943,6 +4331,19 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 panel.memory.extendedHours = panel.memory.extendedHours || {};
                 panel.memory.extendedHours[oldType] = panel.extendedHours;
             }
+            // Remember MIN MAG / BASIN / GLOBE display when leaving geo panels (supportsGeoDisplay).
+            if (oldType === 'seismic') {
+                panel.memory.seismic = { ...panel.memory.seismic };
+                if (typeof panel.minMag === 'number') panel.memory.seismic.minMag = panel.minMag;
+                if (panel.display === 'globe') panel.memory.seismic.display = 'globe';
+                else delete panel.memory.seismic.display;
+            }
+            if (oldType === 'storms') {
+                panel.memory.storms = { ...panel.memory.storms };
+                if (panel.basin) panel.memory.storms.basin = panel.basin;
+                if (panel.display === 'globe') panel.memory.storms.display = 'globe';
+                else delete panel.memory.storms.display;
+            }
 
             panel.type = newType;
             if (PANEL_TYPES[newType].usesSymbols) {
@@ -3985,15 +4386,15 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 panel.minMag = typeof mem?.minMag === 'number' ? mem.minMag
                              : typeof panel.minMag === 'number' ? panel.minMag
                              : 5.5;
+                if (mem?.display === 'globe') panel.display = 'globe';
             } else {
-                if (typeof panel.minMag === 'number') panel.memory.seismic = { minMag: panel.minMag };
                 delete panel.minMag;
             }
             if (newType === 'storms') {
                 const mem = panel.memory.storms;
                 panel.basin = mem?.basin || panel.basin || 'all';
+                if (mem?.display === 'globe') panel.display = 'globe';
             } else {
-                if (panel.basin) panel.memory.storms = { basin: panel.basin };
                 delete panel.basin;
             }
             if (newType === 'calendar') {
@@ -4100,6 +4501,16 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             } else {
                 panel.display = 'heatmap';
             }
+            saveState();
+            renderAllPanels();
+        }
+
+        // DISPLAY → GLOBE for any panel type with supportsGeoDisplay (lat/lon feeds).
+        function setGeoPanelDisplay(pid, mode) {
+            const panel = state.panels[pid];
+            if (!panel || !PANEL_TYPES[panel.type]?.supportsGeoDisplay) return;
+            if (mode === 'globe') panel.display = 'globe';
+            else delete panel.display;
             saveState();
             renderAllPanels();
         }
