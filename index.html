@@ -949,7 +949,7 @@
     <div class="terminal">
         <div class="header">
             <div>
-                <div class="header-title">ROTHBERG TERMINAL v1.2</div>
+                <div class="header-title">ROTHBERG TERMINAL v1.3</div>
                 <div class="header-subtitle" id="headerSubtitle">[ FREE DATA · CORE MARKETS ]</div>
             </div>
             <div class="header-right">
@@ -1693,13 +1693,34 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
                 // Pre-market quotes are relative to previous-day close; after-hours
                 // quotes are relative to today's regular close — matching how
-                // Yahoo displays them. Prefer meta fields when present, else
-                // use the last bar close in each window.
-                const preMarketPrice  = Number.isFinite(meta.preMarketPrice)  ? meta.preMarketPrice  : lastPreClose;
-                const postMarketPrice = Number.isFinite(meta.postMarketPrice) ? meta.postMarketPrice : lastPostClose;
-                const preMarketChange  = preMarketPrice  != null ? (preMarketPrice  - previousClose) : null;
-                const postMarketChange = postMarketPrice != null ? (postMarketPrice - regularPrice)  : null;
-                const preMarketChangePercent  = preMarketChange  != null && previousClose ? (preMarketChange  / previousClose) * 100 : null;
+                // Yahoo displays them.
+                //
+                // Two subtleties fixed here:
+                //   1. Pre-market baseline: prefer `meta.previousClose` (calendar-
+                //      relative last regular close) over `meta.chartPreviousClose`.
+                //      chartPreviousClose tracks the chart's time window, which can
+                //      return a day earlier than expected when Yahoo hands back the
+                //      last completed session's bars (producing a two-day-stale
+                //      baseline).
+                //   2. Staleness: only trust `meta.preMarketPrice` / `postMarketPrice`
+                //      when their timestamp falls inside today's pre/post window.
+                //      Yahoo often leaves yesterday's value in those fields after a
+                //      session boundary, which would otherwise be compared against
+                //      the current regular price and produce a nonsense change.
+                const priorRegClose = meta.previousClose ?? meta.chartPreviousClose ?? null;
+                const preInWindow  = Number.isFinite(meta.preMarketTime)  && preWin
+                    && meta.preMarketTime  >= preWin[0]  && meta.preMarketTime  < preWin[1];
+                const postInWindow = Number.isFinite(meta.postMarketTime) && postWin
+                    && meta.postMarketTime >= postWin[0] && meta.postMarketTime < postWin[1];
+                const preMarketPrice  = lastPreClose  != null
+                    ? lastPreClose
+                    : (Number.isFinite(meta.preMarketPrice)  && preInWindow  ? meta.preMarketPrice  : null);
+                const postMarketPrice = lastPostClose != null
+                    ? lastPostClose
+                    : (Number.isFinite(meta.postMarketPrice) && postInWindow ? meta.postMarketPrice : null);
+                const preMarketChange  = preMarketPrice  != null && priorRegClose != null ? (preMarketPrice  - priorRegClose) : null;
+                const postMarketChange = postMarketPrice != null && regularPrice  != null ? (postMarketPrice - regularPrice)  : null;
+                const preMarketChangePercent  = preMarketChange  != null && priorRegClose ? (preMarketChange  / priorRegClose) * 100 : null;
                 const postMarketChangePercent = postMarketChange != null && regularPrice  ? (postMarketChange / regularPrice)  * 100 : null;
 
                 // Derive marketState from tradingPeriod timestamps when meta
