@@ -62,14 +62,14 @@ Heat map is **not** listed here — it is a **DISPLAY** option on the types belo
 
 | Type | What it shows | Default symbols |
 |---|---|---|
-| **STOCKS** | Individual equity watchlist | `NVDA MSFT GOOGL META AVGO CRM BFLY HYPR QSI` |
+| **STOCKS** | Individual equity watchlist | `NVDA MSFT GOOG META AVGO CRM BFLY HYPR QSI INTC MU GFS AMD EWY AMZN ASML TSM` |
 | **INDICES** | Market indices | `^GSPC ^IXIC ^DJI ^SOX ^VIX ^RUT` |
 | **CRYPTO** | Cryptocurrencies | `BTC-USD ETH-USD SOL-USD DOGE-USD` |
 | **FOREX** | Currency pairs | `EURUSD=X USDJPY=X GBPUSD=X AUDUSD=X` |
 | **COMMODITIES** | Futures contracts | `CL=F GC=F SI=F NG=F HG=F` |
 | **TREASURIES** | US bond yields | `^IRX ^FVX ^TNX ^TYX` |
-| **NEWS** | Financial headlines by topic | Markets · **Watchlist** (Google News over every ticker in your **WATCHLIST** panels) · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World · Chokepoints · **EIA** (*Today in Energy* RSS — [U.S. Energy Information Administration](https://www.eia.gov/)) + custom |
-| **CALENDAR** | Upcoming US releases (macro + energy) with a `Macro / Energy / All` filter | Computed (CPI, NFP, FOMC, PCE, GDP + EIA WPSR / Nat Gas Storage / STEO) |
+| **NEWS** | Financial headlines by topic | Markets · **Watchlist** (Google News over every ticker in your **WATCHLIST** panels) · Tech/AI · Semis · Crypto · Economy · Energy · Politics · World · Chokepoints · **EIA** (*Today in Energy* RSS — [U.S. Energy Information Administration](https://www.eia.gov/)) + custom; tray **SAVED** row lists custom topics with `[×]` to remove (same idea as watchlist tags). Custom topics persist in the saved layout (localStorage / `[EXPORT]` JSON), like symbols. |
+| **CALENDAR** | Upcoming US releases (macro + energy) with a `Macro / Energy / All` filter | Computed (CPI, NFP, FOMC, PCE, GDP + EIA WPSR / Nat Gas Storage / STEO). Each release title links to the agency’s official schedule or data page. |
 | **MOVERS** | Derived top gainers/losers, VIX, sentiment | From loaded quotes |
 | **PREDICTION MARKETS** | Live Polymarket markets ranked by 24h volume | Filter: All · Politics · Crypto · Sports · Elections · Economics |
 | **SEISMIC EVENTS** | Live USGS earthquake feed (M4.5+ last 7 days) | Threshold: M4.5 · M5 · M5.5 · M6 · M7 |

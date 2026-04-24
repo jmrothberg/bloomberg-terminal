@@ -805,6 +805,8 @@
 
         .cal-date { color: var(--text-accent); font-variant-numeric: tabular-nums; }
         .cal-event { color: var(--text-primary); }
+        .cal-event a { color: var(--text-primary); text-decoration: none; }
+        .cal-event a:hover { text-decoration: underline; }
         .cal-source { color: var(--text-dim); font-size: 9px; }
 
         .movers-block { margin-bottom: 10px; }
@@ -1046,6 +1048,9 @@ Energy · Politics · World · Chokepoints · EIA.
 Watchlist runs a Google News search over every ticker in your
 WATCHLIST (stocks) panels — add symbols there first.
 Or type a custom query and press Enter to make your own topic.
+Custom topics list under SAVED in the tray with [×] to remove
+(same pattern as watchlist symbols). They are stored in your
+saved layout (localStorage / export JSON) and survive reload.
 
 CHOKEPOINTS is a curated preset for shipping / supply-chain
 disruption — Red Sea, Suez, Panama, Strait of Hormuz, tanker
@@ -1070,6 +1075,7 @@ DATES are computed client-side from weekday math — CALENDAR
 never fetches anything from BLS, BEA, or EIA. When a release
 hits, you still have to read the actual number elsewhere
 (e.g. the NEWS panel · EIA topic for EIA's own write-up).
+Click a release title to open the agency schedule or data page.
 
 Click a CATEGORY chip in the tray to filter:
 
@@ -1341,7 +1347,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         ];
 
         const DEFAULT_SYMBOLS = {
-            stocks:      ['NVDA','MSFT','GOOGL','META','AVGO','CRM','BFLY','HYPR','QSI'],
+            stocks:      ['NVDA','MSFT','GOOG','META','AVGO','CRM','BFLY','HYPR','QSI','INTC','MU','GFS','AMD','EWY','AMZN','ASML','TSM'],
             indices:     ['^GSPC','^IXIC','^DJI','^SOX','^VIX','^RUT'],
             crypto:      ['BTC-USD','ETH-USD','SOL-USD','DOGE-USD'],
             forex:       ['EURUSD=X','USDJPY=X','GBPUSD=X','AUDUSD=X'],
@@ -1417,6 +1423,22 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             { key: 'energy', label: 'Energy' },
         ];
 
+        // Official schedule / report pages for SCHEDULED RELEASES row links (opens new tab).
+        const CALENDAR_ROW_LINKS = {
+            blsNfp: 'https://www.bls.gov/schedule/news_release/empsit.htm',
+            blsCpi: 'https://www.bls.gov/schedule/news_release/cpi.htm',
+            blsPpi: 'https://www.bls.gov/schedule/news_release/ppi.htm',
+            censusRetail: 'https://www.census.gov/economic-indicators',
+            ismMfg: 'https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/manufacturing/pmi/',
+            ismSvc: 'https://www.ismworld.org/supply-management-news-and-reports/reports/ism-report-on-business/services/pmi/',
+            beaPce: 'https://www.bea.gov/data/personal-consumption-expenditures-price-index',
+            beaGdp: 'https://www.bea.gov/data/gdp/gross-domestic-product',
+            fedFomc: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm',
+            eiaSteo: 'https://www.eia.gov/outlooks/steo/',
+            eiaWpsr: 'https://www.eia.gov/petroleum/supply/weekly/',
+            eiaGasStor: 'https://www.eia.gov/naturalgas/storage/',
+        };
+
         // Known FOMC meeting dates for 2026 (publicly scheduled). Update annually.
         const FOMC_2026 = ['2026-01-28','2026-03-18','2026-04-29','2026-06-17','2026-07-29','2026-09-16','2026-10-28','2026-12-09'];
 
@@ -1433,6 +1455,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             layout: ['p1','p2','p3','p4','p5','p6'],
             config: { refreshInterval: 60000, newsCount: 10 },
             ui: { openTray: null },
+            // Custom NEWS topics (Google query strings) — persisted with layout like watchlist symbols.
+            customNewsTopics: [],
         };
 
         // ============================================================
@@ -1501,7 +1525,34 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (saved.layout) merged.layout = saved.layout;
             if (saved.config) merged.config = { ...base.config, ...saved.config };
             if (saved.ui)     merged.ui     = { ...base.ui, ...saved.ui };
+            if (Array.isArray(saved.customNewsTopics)) merged.customNewsTopics = saved.customNewsTopics;
             return merged;
+        }
+
+        /** Rebuild NEWS_TOPICS custom_* entries from state.customNewsTopics (after load/import). */
+        function syncNewsTopicsRegistryFromState() {
+            const arr = Array.isArray(state.customNewsTopics) ? state.customNewsTopics : [];
+            state.customNewsTopics = arr;
+            for (const k of Object.keys(NEWS_TOPICS)) {
+                if (k.startsWith('custom_')) delete NEWS_TOPICS[k];
+            }
+            for (const row of arr) {
+                if (!row || typeof row.key !== 'string' || !row.key.startsWith('custom_')) continue;
+                const q = typeof row.query === 'string' ? row.query.trim() : '';
+                if (!q) continue;
+                const label = typeof row.label === 'string' && row.label
+                    ? row.label
+                    : (q.length > 14 ? q.slice(0, 14) + '…' : q);
+                NEWS_TOPICS[row.key] = { label, query: q };
+            }
+            for (const pid of state.layout) {
+                const p = state.panels[pid];
+                if (p?.type !== 'news' || !p.topic) continue;
+                if (!NEWS_TOPICS[p.topic]) {
+                    p.topic = 'market';
+                    delete p._articles;
+                }
+            }
         }
 
         // Old layouts used panel.type === 'heatmap' + sourcePanelId. Heat map is now
@@ -1597,6 +1648,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (!confirm('Replace current layout with imported one? Your current layout will be overwritten.')) return;
                 state = mergeState(structuredClone(DEFAULT_STATE), incoming);
                 migrateLegacySavedState();
+                syncNewsTopicsRegistryFromState();
                 saveState();
                 renderAllPanels();
                 refreshAll();
@@ -2044,7 +2096,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         }
 
         async function fetchChart(symbol, range, interval) {
-            const key = `${symbol}|${range}`;
+            const key = `${symbol}|${range}|${interval}`;
             const cached = chartCache[key];
             const ttl = range === '1d' ? 60_000 : 5 * 60_000;
             if (cached && Date.now() - cached.ts < ttl) return cached;
@@ -2087,6 +2139,61 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             } catch (err) {
                 return null;
             }
+        }
+
+        /**
+         * After a fresh Yahoo 1D chart pull, copy series into quoteCache so row sparkline
+         * matches drilldown polyline; align headline fields with last bar vs chart prior close.
+         */
+        function mergeOneDayChartIntoQuoteCache(sym, chart) {
+            const q = quoteCache[sym];
+            if (!q || !chart || !Array.isArray(chart.closes) || chart.closes.length < 2) return;
+            const closes = chart.closes.slice();
+            const tsIn = Array.isArray(chart.timestamps) ? chart.timestamps : [];
+            q.closes = closes;
+            q.timestamps = tsIn.length === closes.length ? tsIn.slice() : [];
+            if (chart.previousClose != null && Number.isFinite(chart.previousClose)) {
+                q.previousClose = chart.previousClose;
+            }
+            const last = closes[closes.length - 1];
+            const prev = q.previousClose;
+            if (!Number.isFinite(last) || !Number.isFinite(prev)) return;
+            q.change = last - prev;
+            q.changePercent = prev ? (q.change / prev) * 100 : 0;
+            q.price = last;
+            const ms = (q.marketState || '').toUpperCase();
+            if (ms === 'REGULAR') {
+                q.regularPrice = last;
+                q.regularChange = q.change;
+                q.regularChangePercent = q.changePercent;
+            }
+            q.ts = Date.now();
+            q.stale = false;
+        }
+
+        /** Re-render quote tables / heatmaps that list this symbol (sparkline picks up merged closes). */
+        function rerenderQuotePanelsContainingSymbol(sym) {
+            if (!sym) return;
+            for (const pid of state.layout) {
+                const p = state.panels[pid];
+                if (!p || !PANEL_TYPES[p.type]?.usesSymbols) continue;
+                if (!(p.symbols || []).includes(sym)) continue;
+                rerenderPanelBody(pid);
+            }
+        }
+
+        /** Invalidate cached chart, refetch, redraw drilldown; on 1D merge series into quoteCache for headline + thumb. */
+        async function resyncDrilldownTickerChart(sym) {
+            if (!sym || !currentDrilldown || currentDrilldown.kind !== 'ticker' || currentDrilldown.symbol !== sym) return;
+            const range = currentDrilldown.range || '1d';
+            const interval = range === '1d' ? '1m' : (RANGE_INTERVALS[range] || '1d');
+            delete chartCache[`${sym}|${range}|${interval}`];
+            const chart = await fetchChart(sym, range, interval);
+            if (!currentDrilldown || currentDrilldown.symbol !== sym) return;
+            if (chart && range === '1d') mergeOneDayChartIntoQuoteCache(sym, chart);
+            if (chart) drawDrilldownChart(chart, sym);
+            renderDrilldownPrice(sym);
+            rerenderQuotePanelsContainingSymbol(sym);
         }
 
         const NEWS_FRESH_WINDOW = 'when:7d';   // Google News RSS recency operator
@@ -2712,7 +2819,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 await Promise.all([refreshQuotes(), refreshNewsPanels(), refreshPredictionPanels(), refreshSeismicPanels(), refreshStormPanels(), refreshEonetPanels()]);
                 renderAllPanels();
                 if (currentDrilldown && currentDrilldown.kind === 'ticker') {
-                    renderDrilldownPrice(currentDrilldown.symbol);
+                    const dds = currentDrilldown.symbol;
+                    renderDrilldownPrice(dds);
+                    await resyncDrilldownTickerChart(dds);
                 }
                 updateStatus('CONNECTED', 'normal');
                 updateTimestamps();
@@ -2722,7 +2831,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 updateStatus('CONNECTION ERROR', 'error');
                 renderAllPanels();
                 if (currentDrilldown && currentDrilldown.kind === 'ticker') {
-                    renderDrilldownPrice(currentDrilldown.symbol);
+                    const dds = currentDrilldown.symbol;
+                    renderDrilldownPrice(dds);
+                    await resyncDrilldownTickerChart(dds);
                 }
             } finally {
                 isRefreshing = false;
@@ -2885,6 +2996,13 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     const active = k === panel.topic ? ' active' : '';
                     return `<button class="chip${active}" onclick="setNewsTopic('${pid}','${k}')">${v.label}</button>`;
                 }).join('');
+                const customTopicKeys = Object.keys(NEWS_TOPICS).filter(k => k.startsWith('custom_'));
+                const customTopicTags = customTopicKeys.length
+                    ? customTopicKeys.map(k => {
+                        const lab = NEWS_TOPICS[k].label || k;
+                        return `<span class="tray-tag">${escapeHTML(lab)}<span class="tray-tag-x" onclick="removeCustomNewsTopic('${escapeAttr(k)}')">[×]</span></span>`;
+                    }).join('')
+                    : '<span class="no-data">(none)</span>';
                 topicSection = `
                     <div class="tray-row">
                         <span class="tray-label">TOPIC</span>
@@ -2896,6 +3014,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                             <input type="text" class="tray-input" placeholder="type custom search and press Enter"
                                    onkeydown="if(event.key==='Enter'){setCustomNewsTopic('${pid}',this.value);this.value='';}">
                         </div>
+                    </div>
+                    <div class="tray-row">
+                        <span class="tray-label">SAVED</span>
+                        <div class="tray-tags">${customTopicTags}</div>
                     </div>
                 `;
             }
@@ -3519,14 +3641,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 ? quoteCache[sym].shortName : null;
             const newsQuery = cachedName ? `${cachedName} ${sym}` : `${sym} stock`;
             const [chartRes, fundRes, newsRes] = await Promise.allSettled([
-                fetchChart(sym, '1d', RANGE_INTERVALS['1d']),
+                fetchChart(sym, '1d', '1m'),
                 fetchFundamentals(sym),
                 fetchNewsRSS(newsQuery, 8),
             ]);
             if (!currentDrilldown || currentDrilldown.symbol !== sym) return;
 
             if (chartRes.status === 'fulfilled' && chartRes.value) {
-                drawDrilldownChart(chartRes.value, sym);
+                const ch = chartRes.value;
+                mergeOneDayChartIntoQuoteCache(sym, ch);
+                drawDrilldownChart(ch, sym);
+                renderDrilldownPrice(sym);
+                rerenderQuotePanelsContainingSymbol(sym);
             } else {
                 document.getElementById('ddChart').innerHTML =
                     '<div class="error-message">CHART UNAVAILABLE — PRESS R TO RETRY</div>';
@@ -3741,12 +3867,26 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const el = document.getElementById('ddPriceRow');
             if (!q) { el.innerHTML = '<span class="dd-price">--</span>'; return; }
             const pf = priceFormatForSymbol(sym);
-            const cls = q.change > 0 ? 'positive' : q.change < 0 ? 'negative' : 'neutral';
-            const sign = q.change >= 0 ? '+' : '';
-            const pctSign = q.changePercent >= 0 ? '+' : '';
+            // On 1D drilldown, headline matches last point of intraday series (same closes[] as thumb + big chart).
+            const on1dTickerDd = currentDrilldown && currentDrilldown.kind === 'ticker'
+                && currentDrilldown.symbol === sym && (currentDrilldown.range || '1d') === '1d';
+            let headPrice = q.price;
+            let headChange = q.change;
+            let headPct = q.changePercent;
+            if (on1dTickerDd && Array.isArray(q.closes) && q.closes.length >= 2 && Number.isFinite(q.previousClose)) {
+                const last = q.closes[q.closes.length - 1];
+                if (Number.isFinite(last)) {
+                    headPrice = last;
+                    headChange = last - q.previousClose;
+                    headPct = q.previousClose ? (headChange / q.previousClose) * 100 : 0;
+                }
+            }
+            const cls = headChange > 0 ? 'positive' : headChange < 0 ? 'negative' : 'neutral';
+            const sign = headChange >= 0 ? '+' : '';
+            const pctSign = headPct >= 0 ? '+' : '';
             const changeStr = pf === 'yield'
-                ? `${sign}${q.change.toFixed(3)} (${pctSign}${q.changePercent.toFixed(2)}%)`
-                : `${sign}${formatPriceFor(pf, q.change, true)} (${pctSign}${q.changePercent.toFixed(2)}%)`;
+                ? `${sign}${headChange.toFixed(3)} (${pctSign}${headPct.toFixed(2)}%)`
+                : `${sign}${formatPriceFor(pf, headChange, true)} (${pctSign}${headPct.toFixed(2)}%)`;
 
             // Extended-hours rows — show BOTH pre and post lines when present
             // so users always see today's full picture (price, change, volume,
@@ -3778,7 +3918,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 buildExtRow('AH',  q.postMarketPrice, q.postMarketChange, q.postMarketChangePercent, q.postMarketVolume, q.postMarketTime);
 
             el.innerHTML = `
-                <span class="dd-price">${formatPriceFor(pf, q.price)}</span>
+                <span class="dd-price">${formatPriceFor(pf, headPrice)}</span>
                 <span class="dd-change ${cls}">${changeStr}</span>
                 ${q.marketState ? `<span class="dd-market-state">${escapeHTML(q.marketState)}</span>` : ''}
                 ${extHTML}
@@ -3805,11 +3945,19 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             currentDrilldown.range = range;
             renderDrilldownRanges(range, 'ticker');
             document.getElementById('ddChart').innerHTML = '<div class="loading">LOADING CHART…</div>';
-            const chart = await fetchChart(currentDrilldown.symbol, range, RANGE_INTERVALS[range] || '1d');
+            const interval = range === '1d' ? '1m' : (RANGE_INTERVALS[range] || '1d');
+            const chart = await fetchChart(currentDrilldown.symbol, range, interval);
             if (!currentDrilldown || currentDrilldown.range !== range) return;
-            if (chart) drawDrilldownChart(chart, currentDrilldown.symbol);
-            else document.getElementById('ddChart').innerHTML =
-                '<div class="error-message">CHART UNAVAILABLE FOR THIS RANGE</div>';
+            const dSym = currentDrilldown.symbol;
+            if (chart) {
+                if (range === '1d') mergeOneDayChartIntoQuoteCache(dSym, chart);
+                drawDrilldownChart(chart, dSym);
+                renderDrilldownPrice(dSym);
+                rerenderQuotePanelsContainingSymbol(dSym);
+            } else {
+                document.getElementById('ddChart').innerHTML =
+                    '<div class="error-message">CHART UNAVAILABLE FOR THIS RANGE</div>';
+            }
         }
 
         function drawDrilldownChart(chart, sym) {
@@ -4557,15 +4705,19 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const scope = category === 'all' ? '' : ` (${category.toUpperCase()})`;
                 return `<div class="no-data">No upcoming releases computed${scope}.</div>`;
             }
-            return events.map(ev => `
+            return events.map(ev => {
+                const titleLink = ev.url
+                    ? `<a href="${escapeAttr(ev.url)}" target="_blank" rel="noopener">${escapeHTML(ev.name)}</a>`
+                    : escapeHTML(ev.name);
+                return `
                 <div class="cal-item">
                     <span class="cal-date">${ev.dateLabel}</span>
                     <span>
-                        <div class="cal-event">${escapeHTML(ev.name)}</div>
+                        <div class="cal-event">${titleLink}</div>
                         <div class="cal-source">${escapeHTML(ev.source)}</div>
                     </span>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         }
 
         function computeUpcomingReleases(today, horizonDays, category = 'all') {
@@ -4580,31 +4732,31 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             for (const m of months) {
                 // NFP — first Friday of month
                 const nfp = firstWeekdayOfMonth(m, 5);
-                out.push({ date: nfp, name: 'Nonfarm Payrolls (NFP)', source: 'BLS', category: 'macro' });
+                out.push({ date: nfp, name: 'Nonfarm Payrolls (NFP)', source: 'BLS', category: 'macro', url: CALENDAR_ROW_LINKS.blsNfp });
                 // ISM Manufacturing — first business day
-                out.push({ date: firstBusinessDay(m), name: 'ISM Manufacturing PMI', source: 'ISM', category: 'macro' });
+                out.push({ date: firstBusinessDay(m), name: 'ISM Manufacturing PMI', source: 'ISM', category: 'macro', url: CALENDAR_ROW_LINKS.ismMfg });
                 // ISM Services — ~3rd business day
-                out.push({ date: nthBusinessDay(m, 3), name: 'ISM Services PMI', source: 'ISM', category: 'macro' });
+                out.push({ date: nthBusinessDay(m, 3), name: 'ISM Services PMI', source: 'ISM', category: 'macro', url: CALENDAR_ROW_LINKS.ismSvc });
                 // CPI — roughly 2nd Tuesday to mid-month; use 12th of month
-                out.push({ date: new Date(m.getFullYear(), m.getMonth(), 12), name: 'Consumer Price Index (CPI)', source: 'BLS', category: 'macro' });
+                out.push({ date: new Date(m.getFullYear(), m.getMonth(), 12), name: 'Consumer Price Index (CPI)', source: 'BLS', category: 'macro', url: CALENDAR_ROW_LINKS.blsCpi });
                 // PPI — ~13th
-                out.push({ date: new Date(m.getFullYear(), m.getMonth(), 13), name: 'Producer Price Index (PPI)', source: 'BLS', category: 'macro' });
+                out.push({ date: new Date(m.getFullYear(), m.getMonth(), 13), name: 'Producer Price Index (PPI)', source: 'BLS', category: 'macro', url: CALENDAR_ROW_LINKS.blsPpi });
                 // Retail Sales — ~15th
-                out.push({ date: new Date(m.getFullYear(), m.getMonth(), 15), name: 'Retail Sales', source: 'Census', category: 'macro' });
+                out.push({ date: new Date(m.getFullYear(), m.getMonth(), 15), name: 'Retail Sales', source: 'Census', category: 'macro', url: CALENDAR_ROW_LINKS.censusRetail });
                 // PCE — last Friday of month
-                out.push({ date: lastWeekdayOfMonth(m, 5), name: 'PCE Price Index', source: 'BEA', category: 'macro' });
+                out.push({ date: lastWeekdayOfMonth(m, 5), name: 'PCE Price Index', source: 'BEA', category: 'macro', url: CALENDAR_ROW_LINKS.beaPce });
                 // GDP — advance estimate late in Jan/Apr/Jul/Oct (around 25th)
                 if ([0,3,6,9].includes(m.getMonth())) {
-                    out.push({ date: new Date(m.getFullYear(), m.getMonth(), 25), name: 'GDP (Advance Estimate)', source: 'BEA', category: 'macro' });
+                    out.push({ date: new Date(m.getFullYear(), m.getMonth(), 25), name: 'GDP (Advance Estimate)', source: 'BEA', category: 'macro', url: CALENDAR_ROW_LINKS.beaGdp });
                 }
                 // EIA Short-Term Energy Outlook — 2nd Tuesday of month (absorbed the
                 // Drilling Productivity Report in June 2024, so one entry covers both).
-                out.push({ date: nthWeekdayOfMonth(m, 2, 2), name: 'EIA Short-Term Energy Outlook (STEO)', source: 'EIA', category: 'energy' });
+                out.push({ date: nthWeekdayOfMonth(m, 2, 2), name: 'EIA Short-Term Energy Outlook (STEO)', source: 'EIA', category: 'energy', url: CALENDAR_ROW_LINKS.eiaSteo });
             }
 
             // FOMC
             for (const dstr of FOMC_2026) {
-                out.push({ date: new Date(dstr + 'T14:00:00'), name: 'FOMC Meeting / Rate Decision', source: 'Federal Reserve', category: 'macro' });
+                out.push({ date: new Date(dstr + 'T14:00:00'), name: 'FOMC Meeting / Rate Decision', source: 'Federal Reserve', category: 'macro', url: CALENDAR_ROW_LINKS.fedFomc });
             }
 
             // Weekly EIA releases — naive-date schedule. Holiday weeks shift a day
@@ -4619,6 +4771,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         name: 'EIA Weekly Petroleum Status (Crude/Gasoline Stocks)',
                         source: 'EIA',
                         category: 'energy',
+                        url: CALENDAR_ROW_LINKS.eiaWpsr,
                     });
                 } else if (d.getDay() === 4) {
                     out.push({
@@ -4626,6 +4779,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         name: 'EIA Weekly Natural Gas Storage',
                         source: 'EIA',
                         category: 'energy',
+                        url: CALENDAR_ROW_LINKS.eiaGasStor,
                     });
                 }
             }
@@ -5142,8 +5296,35 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const q = (query || '').trim();
             if (!q) return;
             const key = `custom_${Date.now()}`;
-            NEWS_TOPICS[key] = { label: q.length > 14 ? q.slice(0,14) + '…' : q, query: q };
+            const label = q.length > 14 ? q.slice(0, 14) + '…' : q;
+            NEWS_TOPICS[key] = { label, query: q };
+            if (!Array.isArray(state.customNewsTopics)) state.customNewsTopics = [];
+            state.customNewsTopics.push({ key, query: q, label });
             setNewsTopic(pid, key);
+        }
+
+        /** Remove a custom NEWS topic (same [×] pattern as watchlist tags). Built-in chips are not removable. */
+        function removeCustomNewsTopic(topicKey) {
+            if (!topicKey || !String(topicKey).startsWith('custom_') || !NEWS_TOPICS[topicKey]) return;
+            delete NEWS_TOPICS[topicKey];
+            state.customNewsTopics = (state.customNewsTopics || []).filter(x => x && x.key !== topicKey);
+            let needNewsRefresh = false;
+            for (const opid of state.layout) {
+                const p = state.panels[opid];
+                if (p?.type !== 'news' || p.topic !== topicKey) continue;
+                p.topic = 'market';
+                delete p._articles;
+                needNewsRefresh = true;
+            }
+            saveState();
+            renderAllPanels();
+            if (needNewsRefresh) {
+                refreshNewsPanels().then(() => {
+                    for (const opid of state.layout) {
+                        if (state.panels[opid]?.type === 'news') rerenderPanelBody(opid);
+                    }
+                });
+            }
         }
 
         // ============================================================
@@ -5344,6 +5525,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
         document.addEventListener('DOMContentLoaded', () => {
             loadState();
+            syncNewsTopicsRegistryFromState();
             renderAllPanels();
             updateClock();
             setInterval(updateClock, 1000);
