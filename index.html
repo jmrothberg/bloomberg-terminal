@@ -1129,7 +1129,7 @@
   1. PRICE INSTRUMENTS — STOCKS, INDICES, CRYPTO, FOREX,
      COMMODITIES, TREASURIES. Structured numeric quotes.
 
-  2. INFORMATION FLOW — NEWS (incl. Watchlist + EIA RSS), CALENDAR,
+  2. INFORMATION FLOW — NEWS (incl. Watchlist, External CSV holdings, EIA RSS), CALENDAR,
      MOVERS, PREDICTION MARKETS. Narrative + schedule + probabilistic risk.
 
   3. VISUALIZATION — HEAT MAP lives under DISPLAY on any price
@@ -1195,10 +1195,16 @@ Press ESC (or [×]) to close.</pre>
                 <div class="help-section">
                     <div class="help-section-title">CHANGE NEWS TOPIC</div>
                     <pre>On a NEWS panel, click a topic chip in the tray:
-Markets · Watchlist · Tech/AI · Semis · Crypto · Economy ·
+Markets · Watchlist · External · Tech/AI · Semis · Crypto · Economy ·
 Energy · Politics · World · Chokepoints · EIA.
 Watchlist runs a Google News search over every ticker in your
 WATCHLIST (stocks) panels — add symbols there first.
+External runs Google News over Yahoo-quoted holdings from every
+EXTERNAL ACCOUNT panel (same rows as live quotes — no sweep/MM
+cash vehicles unless you SYM-override them to a listed ticker).
+Shift+click or ⌘+click (or long-press ~0.5s on a chip) selects
+multiple topics; the feed merges headlines from any selected topic
+(duplicate URLs removed).
 Or type a custom query and press Enter to make your own topic.
 Custom topics list under SAVED in the tray with [×] to remove
 (same pattern as watchlist symbols). They are stored in your
@@ -1385,7 +1391,10 @@ WHAT'S IN THE LIST
     DISPLAY → GLOBE: same feed, rotating globe from lat/lon.
 
   TROPICAL CYCLONES — NOAA NHC active-storms feed. BASIN
-    chip (All / Atlantic / E. Pacific / C. Pacific). Each
+    chips (All / Atlantic / E. Pacific / C. Pacific). Normal
+    click = one basin; Shift+click / ⌘+click or long-press ~0.5s
+    toggles multiple basins (list/globe show storms in any
+    selected basin). Each
     row: Saffir-Simpson CAT from 1-min sustained wind
     (or TD/TS for sub-hurricane), wind mph, pressure mb,
     click-through to NHC public advisory.
@@ -1448,7 +1457,8 @@ Enter     (in symbol input) add typed symbol
 Up/Down   (in symbol input) navigate autocomplete
 
 Shift+click / ⌘+click — also used in the tray for <strong>EXTERNAL ACCOUNT</strong>
-(multi-account combined roll-up) and <strong>EARTH EVENTS</strong> FILTER (multi-category
+(multi-account combined roll-up), <strong>NEWS</strong> topics (merged feed),
+<strong>TROPICAL CYCLONES</strong> basins, and <strong>EARTH EVENTS</strong> FILTER (multi-category
 OR). See those sections above. On touch devices without Shift, use a <strong>long-press
 (~0.5s)</strong> on the chip instead.</pre>
                 </div>
@@ -1564,6 +1574,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             market:      { label: 'Markets',     query: 'stock market today NYSE NASDAQ' },
             // fromWatchlist: query built at fetch time from all WATCHLIST (stocks) panel symbols
             watchlist:   { label: 'Watchlist',   fromWatchlist: true },
+            // fromExternalHoldings: Google News over Yahoo keys from EXTERNAL ACCOUNT rows (excludes sweep/MM statement lines — same rules as quotes)
+            externalHoldings: { label: 'External', fromExternalHoldings: true },
             tech:        { label: 'Tech/AI',     query: 'artificial intelligence technology stocks earnings' },
             semi:        { label: 'Semis',       query: 'semiconductor chip industry NVIDIA TSMC ASML' },
             crypto:      { label: 'Crypto',      query: 'bitcoin ethereum cryptocurrency' },
@@ -1837,6 +1849,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 if (!NEWS_TOPICS[p.topic]) {
                     p.topic = 'market';
                     delete p._articles;
+                }
+                if (Array.isArray(p.newsTopicKeys) && p.newsTopicKeys.length) {
+                    const ok = p.newsTopicKeys.filter((k) => NEWS_TOPICS[k]);
+                    if (!ok.length) {
+                        delete p.newsTopicKeys;
+                    } else if (ok.length === 1) {
+                        p.topic = ok[0];
+                        delete p.newsTopicKeys;
+                    } else {
+                        p.newsTopicKeys = [...new Set(ok)];
+                        p.topic = p.newsTopicKeys[0];
+                    }
                 }
             }
         }
@@ -2607,6 +2631,55 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             return out;
         }
 
+        /** Yahoo keys from every EXTERNAL ACCOUNT panel (merged rows, current selection) — skips sweep/MM statement lines (externalRowUsesCsvMarketValue); aligns with quote collection. */
+        function collectExternalHoldingsSymbolsForNews() {
+            const set = new Set();
+            for (const pid of state.layout) {
+                const p = state.panels[pid];
+                if (!p || p.type !== 'externalAccount') continue;
+                const merged = getExternalMergedRows(p);
+                if (!merged.length) continue;
+                const acct = p.externalSelectedAccount;
+                if (!acct) continue;
+                const subset = externalPanelSubsetAccountNames(p);
+                merged.forEach((r) => {
+                    if (externalRowUsesCsvMarketValue(p, r)) return;
+                    if (acct === EXTERNAL_ACCOUNT_TOTALS_ID) {
+                        if (!externalRowIncludedInTotals(p, r)) return;
+                    } else if (subset) {
+                        if (!subset.includes(r.accountName)) return;
+                    } else if (r.accountName !== acct) return;
+                    const qk = getExternalRowQuoteKey(p, r);
+                    if (qk) set.add(qk);
+                });
+            }
+            return Array.from(set);
+        }
+
+        /** Active NEWS topic keys — multi-topic merge is OR of feeds (URLs deduped in refreshNewsPanels). */
+        function getNewsPanelTopicKeys(panel) {
+            if (!panel || panel.type !== 'news') return [];
+            const arr = panel.newsTopicKeys;
+            if (Array.isArray(arr) && arr.length) {
+                const ok = arr.filter((k) => NEWS_TOPICS[k]);
+                if (ok.length) return [...new Set(ok)];
+            }
+            const t = panel.topic || 'market';
+            return NEWS_TOPICS[t] ? [t] : ['market'];
+        }
+
+        /** Active storm basin chips — OR filter when multiple (all = no basin filter). */
+        function getStormBasinKeys(panel) {
+            if (!panel || panel.type !== 'storms') return ['all'];
+            const arr = panel.stormBasins;
+            if (Array.isArray(arr) && arr.length) {
+                const ok = arr.filter((k) => STORM_BASINS.some((b) => b.key === k));
+                if (ok.length) return [...new Set(ok)];
+            }
+            const b = panel.basin || 'all';
+            return STORM_BASINS.some((x) => x.key === b) ? [b] : ['all'];
+        }
+
         function parseNewsRssXml(xml, topicObj) {
             const doc = new DOMParser().parseFromString(xml, 'text/xml');
             const items = Array.from(doc.querySelectorAll('item'));
@@ -2679,7 +2752,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             });
 
             function watchlistProgressRender(capSlice) {
-                if (!panel || panel.topic !== 'watchlist') return;
+                if (!panel || !getNewsPanelTopicKeys(panel).includes('watchlist')) return;
                 const fresh = finalizeNewsArticles(dedupeNewsByUrl(pool), capSlice);
                 panel._articles = fresh;
                 rerenderPanelBody(panelId);
@@ -2731,9 +2804,85 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             return fresh;
         }
 
+        /** Same batching/progressive render as watchlist news, but symbols from EXTERNAL ACCOUNT panels (collectExternalHoldingsSymbolsForNews). */
+        async function fetchExternalHoldingsNewsRSS(count, topicObj, panelId = null) {
+            const syms = collectExternalHoldingsSymbolsForNews();
+            const batches = [];
+            for (let i = 0; i < syms.length; i += WATCHLIST_NEWS_BATCH) {
+                batches.push(syms.slice(i, i + WATCHLIST_NEWS_BATCH));
+            }
+            const maxCap = Math.min(WATCHLIST_NEWS_ABS_MAX, count * Math.max(1, batches.length));
+            const cacheKey = `extHoldings|${syms.join(',')}|${count}|cap${maxCap}`;
+            if (!syms.length) {
+                return [];
+            }
+            const cached = newsCache[cacheKey];
+            if (cached && Date.now() - cached.ts < 60_000) return cached.articles;
+
+            const panel = panelId ? state.panels[panelId] : null;
+            const existingDisplay = Array.isArray(panel?._articles) ? panel._articles : [];
+            const pool = existingDisplay.map(a => {
+                const pubMs = Date.parse(a.publishedAt);
+                return { ...a, pubMs: Number.isFinite(pubMs) ? pubMs : Date.now() };
+            });
+
+            function externalHoldingsProgressRender(capSlice) {
+                if (!panel || !getNewsPanelTopicKeys(panel).includes('externalHoldings')) return;
+                const fresh = finalizeNewsArticles(dedupeNewsByUrl(pool), capSlice);
+                panel._articles = fresh;
+                rerenderPanelBody(panelId);
+            }
+
+            if (panel && !existingDisplay.length) {
+                panel._articles = null;
+                rerenderPanelBody(panelId);
+            }
+
+            async function pullOneSymbol(sym) {
+                try {
+                    const parsed = await fetchGoogleNewsRssForQuery(`${sym} stock`, topicObj);
+                    pool.push(...parsed);
+                } catch (e) {
+                    console.warn('External holdings news: symbol fetch failed', sym, e);
+                }
+            }
+
+            for (let bi = 0; bi < batches.length; bi++) {
+                const batch = batches[bi];
+                let parsed = [];
+                try {
+                    parsed = await fetchGoogleNewsRssForQuery(`${batch.join(' ')} stock`, topicObj);
+                } catch (e) {
+                    console.warn('External holdings news: batch fetch failed, trying per-symbol', batch, e);
+                }
+                if (!parsed.length) {
+                    for (let si = 0; si < batch.length; si++) {
+                        await pullOneSymbol(batch[si]);
+                        await new Promise(r => setTimeout(r, WATCHLIST_NEWS_PAUSE_MS));
+                        const capSlice = Math.min(maxCap, Math.max(existingDisplay.length, count * bi + si + 1));
+                        externalHoldingsProgressRender(capSlice);
+                    }
+                } else {
+                    pool.push(...parsed);
+                    await new Promise(r => setTimeout(r, WATCHLIST_NEWS_PAUSE_MS));
+                    const capSlice = Math.min(maxCap, Math.max(existingDisplay.length, count * (bi + 1)));
+                    externalHoldingsProgressRender(capSlice);
+                }
+            }
+
+            const fresh = finalizeNewsArticles(dedupeNewsByUrl(pool), maxCap);
+            if (fresh.length) {
+                newsCache[cacheKey] = { articles: fresh, ts: Date.now() };
+            }
+            return fresh;
+        }
+
         async function fetchNewsRSS(topic, count) {
             const topicObj = NEWS_TOPICS[topic] || { query: topic, label: topic };
 
+            if (topicObj.fromExternalHoldings) {
+                return fetchExternalHoldingsNewsRSS(count, topicObj, null);
+            }
             if (topicObj.fromWatchlist) {
                 return fetchWatchlistNewsRSS(count, topicObj);
             }
@@ -3411,22 +3560,58 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             await Promise.all(newsPanels.map(async pid => {
                 const p = state.panels[pid];
                 const count = state.config.newsCount;
-                const topic = p.topic || 'market';
-                const topicObj = NEWS_TOPICS[topic] || { query: topic };
-                if (topicObj.fromWatchlist) {
-                    // Function mutates p._articles progressively (rolling pool) and
-                    // returns the final merged list. If this round brought nothing
-                    // new AND we had no articles before, res will be []; otherwise
-                    // the previously-shown stories remain in the pool.
-                    const res = await fetchWatchlistNewsRSS(count, topicObj, pid);
-                    if (res.length || !Array.isArray(p._articles)) {
-                        p._articles = res;
+                const keys = getNewsPanelTopicKeys(p);
+                const existingDisplay = Array.isArray(p._articles) ? p._articles : [];
+
+                async function articlesForTopicKey(topicKey) {
+                    const topicObj = NEWS_TOPICS[topicKey] || { query: topicKey };
+                    if (topicObj.fromWatchlist) {
+                        return fetchWatchlistNewsRSS(count, topicObj, progressPid && keys[0] === 'watchlist' ? pid : null);
                     }
-                } else {
-                    const res = await fetchNewsRSS(topic, count);
-                    if (res.length || !Array.isArray(p._articles) || !p._articles.length) {
-                        p._articles = res;
+                    if (topicObj.fromExternalHoldings) {
+                        return fetchExternalHoldingsNewsRSS(count, topicObj, progressPid && keys[0] === 'externalHoldings' ? pid : null);
                     }
+                    return fetchNewsRSS(topicKey, count);
+                }
+
+                if (keys.length === 1) {
+                    const topicKey = keys[0];
+                    const topicObj = NEWS_TOPICS[topicKey] || { query: topicKey };
+                    if (topicObj.fromWatchlist) {
+                        const res = await fetchWatchlistNewsRSS(count, topicObj, pid);
+                        if (res.length || !Array.isArray(p._articles)) {
+                            p._articles = res;
+                        }
+                    } else if (topicObj.fromExternalHoldings) {
+                        const res = await fetchExternalHoldingsNewsRSS(count, topicObj, pid);
+                        if (res.length || !Array.isArray(p._articles)) {
+                            p._articles = res;
+                        }
+                    } else {
+                        const res = await fetchNewsRSS(topicKey, count);
+                        if (res.length || !Array.isArray(p._articles) || !p._articles.length) {
+                            p._articles = res;
+                        }
+                    }
+                    return;
+                }
+
+                // Multi-topic: OR-merge feeds (dedupe URLs), cap list length for responsiveness
+                let pool = existingDisplay.map(a => {
+                    const pubMs = Date.parse(a.publishedAt);
+                    return { ...a, pubMs: Number.isFinite(pubMs) ? pubMs : Date.now() };
+                });
+                for (const topicKey of keys) {
+                    const chunk = await articlesForTopicKey(topicKey);
+                    for (const a of chunk) {
+                        const pubMs = Date.parse(a.publishedAt);
+                        pool.push({ ...a, pubMs: Number.isFinite(pubMs) ? pubMs : Date.now() });
+                    }
+                }
+                const cap = Math.min(120, Math.max(count * keys.length, count * 3));
+                const fresh = finalizeNewsArticles(dedupeNewsByUrl(pool), cap);
+                if (fresh.length || !existingDisplay.length) {
+                    p._articles = fresh;
                 }
             }));
         }
@@ -3882,8 +4067,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 ? ` <span class="panel-title-ext">· EXT</span>`
                 : '';
             if (panel.type === 'news' && panel.topic) {
-                const t = NEWS_TOPICS[panel.topic];
-                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${t ? t.label : panel.topic}</span>`;
+                const keys = getNewsPanelTopicKeys(panel);
+                const labs = keys.map((k) => (NEWS_TOPICS[k] || {}).label || k);
+                const labStr = labs.length > 2 ? `${labs.slice(0, 2).join('+')}+…` : labs.join('+');
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${escapeHTML(labStr || panel.topic)}</span>`;
             }
             if (panel.type === 'prediction') {
                 const f = POLYMARKET_FILTERS.find(x => x.key === (panel.filter || 'all'));
@@ -3898,9 +4085,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 return ` <span style="color:var(--text-secondary);font-weight:400;">· M${m.toFixed(1)}+${g}</span>`;
             }
             if (panel.type === 'storms') {
-                const b = STORM_BASINS.find(x => x.key === (panel.basin || 'all'));
+                const keys = getStormBasinKeys(panel);
+                const labs = keys.map((k) => (STORM_BASINS.find((x) => x.key === k) || {}).label || k);
+                const labStr = labs.length > 2 ? `${labs.slice(0, 2).join('+')}+…` : labs.join('+');
                 const g = panel.display === 'globe' ? ' · GLOBE' : '';
-                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${b ? b.label : panel.basin}${g}</span>`;
+                return ` <span style="color:var(--text-secondary);font-weight:400;">· ${escapeHTML(labStr || panel.basin)}${g}</span>`;
             }
             if (panel.type === 'eonet') {
                 const keys = getEonetActiveFilterKeys(panel);
@@ -3986,9 +4175,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
             let topicSection = '';
             if (typeMeta?.usesNews) {
+                const newsKeySet = new Set(getNewsPanelTopicKeys(panel));
                 const chips = Object.entries(NEWS_TOPICS).map(([k, v]) => {
-                    const active = k === panel.topic ? ' active' : '';
-                    return `<button class="chip${active}" onclick="setNewsTopic('${pid}','${k}')">${v.label}</button>`;
+                    const active = newsKeySet.has(k) ? ' active' : '';
+                    const tit = escapeAttr(`${v.label} · Shift+click or ⌘+click (or long-press ~0.5s) for multiple topics — merged feed is OR of selected chips (URLs deduped)`);
+                    return `<button type="button" class="chip${active}" onclick="newsTopicChipClick(event,'${escapeAttr(pid)}','${escapeAttr(k)}')" onpointerdown="newsTopicChipPointerDown(event,'${escapeAttr(pid)}','${escapeAttr(k)}')" onpointerup="newsTopicChipPointerUp('${escapeAttr(pid)}')" onpointercancel="newsTopicChipPointerUp('${escapeAttr(pid)}')" title="${tit}">${escapeHTML(v.label)}</button>`;
                 }).join('');
                 const customTopicKeys = Object.keys(NEWS_TOPICS).filter(k => k.startsWith('custom_'));
                 const customTopicTags = customTopicKeys.length
@@ -4055,10 +4246,11 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
             let stormsSection = '';
             if (panel.type === 'storms') {
-                const current = panel.basin || 'all';
+                const basinKeySet = new Set(getStormBasinKeys(panel));
                 const chips = STORM_BASINS.map(b => {
-                    const active = current === b.key ? ' active' : '';
-                    return `<button class="chip${active}" onclick="setStormBasin('${pid}','${b.key}')">${b.label}</button>`;
+                    const active = basinKeySet.has(b.key) ? ' active' : '';
+                    const tit = escapeAttr(`Shift+click or ⌘+click (or long-press ~0.5s) for multiple basins — list/globe show storms in any selected basin`);
+                    return `<button type="button" class="chip${active}" onclick="stormBasinChipClick(event,'${escapeAttr(pid)}','${escapeAttr(b.key)}')" onpointerdown="stormBasinChipPointerDown(event,'${escapeAttr(pid)}','${escapeAttr(b.key)}')" onpointerup="stormBasinChipPointerUp('${escapeAttr(pid)}')" onpointercancel="stormBasinChipPointerUp('${escapeAttr(pid)}')" title="${tit}">${escapeHTML(b.label)}</button>`;
                 }).join('');
                 const listActiveS = panel.display !== 'globe' ? ' active' : '';
                 const globeActiveS = panel.display === 'globe' ? ' active' : '';
@@ -4082,7 +4274,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const chips = EONET_FILTER_CHIPS.map((c) => {
                     const active = eonetKeySet.has(c.key) ? ' active' : '';
                     const tit = escapeAttr(`${c.title} · Shift+click or ⌘+click (or long-press ~0.5s) for multiple filters`);
-                    return `<button type="button" class="chip${active}" onclick="eonetChipClick(event,'${escapeAttr(pid)}','${escapeAttr(c.key)}')" onpointerdown="eonetChipPointerDown(event,'${escapeAttr(pid)}','${escapeAttr(c.key)}')" onpointerup="eonetChipPointerUp(event)" onpointercancel="eonetChipPointerUp(event)" title="${tit}">${escapeHTML(c.label)}</button>`;
+                    return `<button type="button" class="chip${active}" onclick="eonetChipClick(event,'${escapeAttr(pid)}','${escapeAttr(c.key)}')" onpointerdown="eonetChipPointerDown(event,'${escapeAttr(pid)}','${escapeAttr(c.key)}')" onpointerup="eonetChipPointerUp('${escapeAttr(pid)}')" onpointercancel="eonetChipPointerUp('${escapeAttr(pid)}')" title="${tit}">${escapeHTML(c.label)}</button>`;
                 }).join('');
                 const listActiveE = panel.display !== 'globe' ? ' active' : '';
                 const globeActiveE = panel.display === 'globe' ? ' active' : '';
@@ -4147,7 +4339,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     const hideX = n === EXTERNAL_ACCOUNT_TOTALS_ID
                         ? ''
                         : `<span class="tray-tag-x" role="button" tabindex="0" onclick="event.preventDefault();event.stopPropagation();externalAccountHideAccountByIndex('${escapeAttr(pid)}',${i})">[×]</span>`;
-                    return `<span class="external-account-chip-wrap"><button type="button" class="chip${active}" onclick="externalAccountChipClick(event,'${escapeAttr(pid)}',${i})" onpointerdown="externalAccountChipPointerDown(event,'${escapeAttr(pid)}',${i})" onpointerup="externalAccountChipPointerUp(event)" onpointercancel="externalAccountChipPointerUp(event)" title="${tit}">${escapeHTML(truncate(lab, 28))}</button>${hideX}</span>`;
+                    return `<span class="external-account-chip-wrap"><button type="button" class="chip${active}" onclick="externalAccountChipClick(event,'${escapeAttr(pid)}',${i})" onpointerdown="externalAccountChipPointerDown(event,'${escapeAttr(pid)}',${i})" onpointerup="externalAccountChipPointerUp('${escapeAttr(pid)}')" onpointercancel="externalAccountChipPointerUp('${escapeAttr(pid)}')" title="${tit}">${escapeHTML(truncate(lab, 28))}</button>${hideX}</span>`;
                 }).join('');
                 externalAccountSection = `
                     <div class="tray-row">
@@ -5930,8 +6122,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const articles = panel._articles;
             if (!articles) return `<div class="loading">LOADING NEWS…</div>`;
             if (!articles.length) {
-                if (panel.topic === 'watchlist' && !collectWatchlistSymbolsForNews().length) {
+                const tkeys = getNewsPanelTopicKeys(panel);
+                if (tkeys.includes('watchlist') && !collectWatchlistSymbolsForNews().length) {
                     return `<div class="no-data">WATCHLIST topic needs symbols — add tickers to a WATCHLIST panel, then [R] to refresh.</div>`;
+                }
+                if (tkeys.includes('externalHoldings') && !collectExternalHoldingsSymbolsForNews().length) {
+                    return `<div class="no-data">EXTERNAL topic needs holdings — load Fidelity CSV on an EXTERNAL ACCOUNT panel (with quoteable rows), then [R] to refresh.</div>`;
                 }
                 return `<div class="error-message">NEWS FEED UNAVAILABLE — try another topic or [R] to refresh.</div>`;
             }
@@ -6030,9 +6226,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
             if (panel.type === 'storms') {
                 const storms = panel._storms;
-                const basin = panel.basin || 'all';
+                const basinKeys = getStormBasinKeys(panel);
                 if (!Array.isArray(storms)) return [];
-                const filtered = basin === 'all' ? storms : storms.filter(s => s.basin === basin);
+                const filtered = basinKeys.includes('all') ? storms : storms.filter(s => basinKeys.includes(s.basin));
                 return filtered
                     .filter(s => s.lat != null && s.lon != null)
                     .map(s => ({
@@ -6376,15 +6572,16 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 return renderGeoGlobeShell(pid);
             }
             const storms = panel._storms;
-            const basin = panel.basin || 'all';
+            const basinKeys = getStormBasinKeys(panel);
             if (storms == null) {
                 return panel._stormsFailed
                     ? `<div class="error-message">NHC FEED UNAVAILABLE — [R] to retry.</div>`
                     : `<div class="loading">LOADING TROPICAL CYCLONES…</div>`;
             }
-            const filtered = basin === 'all' ? storms : storms.filter(s => s.basin === basin);
+            const filtered = basinKeys.includes('all') ? storms : storms.filter(s => basinKeys.includes(s.basin));
             if (!filtered.length) {
-                return `<div class="no-data">No active tropical cyclones${basin !== 'all' ? ' in ' + basinLabel(basin) : ''}.</div>`;
+                const basinHint = basinKeys.includes('all') ? '' : ' in ' + basinKeys.map(basinLabel).join(' / ');
+                return `<div class="no-data">No active tropical cyclones${basinHint}.</div>`;
             }
             return filtered.map(s => {
                 const cat = classifyStorm(s.classification, s.intensity);
@@ -6737,6 +6934,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 panel.memory[oldType] = mem;
             } else if (oldType === 'news' && panel.topic) {
                 panel.memory.news = { topic: panel.topic };
+                if (Array.isArray(panel.newsTopicKeys) && panel.newsTopicKeys.length > 1) {
+                    panel.memory.news.newsTopicKeys = [...panel.newsTopicKeys];
+                }
             }
             // Stash extendedHours under the old type (only types that support it).
             if (PANEL_TYPES[oldType].supportsExtendedHours && panel.extendedHours != null) {
@@ -6753,6 +6953,9 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (oldType === 'storms') {
                 panel.memory.storms = { ...panel.memory.storms };
                 if (panel.basin) panel.memory.storms.basin = panel.basin;
+                if (Array.isArray(panel.stormBasins) && panel.stormBasins.length > 1) {
+                    panel.memory.storms.stormBasins = [...panel.stormBasins];
+                } else delete panel.memory.storms.stormBasins;
                 if (panel.display === 'globe') panel.memory.storms.display = 'globe';
                 else delete panel.memory.storms.display;
             }
@@ -6807,9 +7010,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 delete panel.display;
             }
             if (newType === 'news') {
-                panel.topic = (panel.memory.news && panel.memory.news.topic) || panel.topic || 'market';
+                const mnews = panel.memory.news;
+                const rememberedKeys = Array.isArray(mnews?.newsTopicKeys) ? mnews.newsTopicKeys.filter((k) => NEWS_TOPICS[k]) : null;
+                if (rememberedKeys && rememberedKeys.length > 1) {
+                    panel.newsTopicKeys = [...new Set(rememberedKeys)];
+                    panel.topic = panel.newsTopicKeys[0];
+                } else {
+                    delete panel.newsTopicKeys;
+                    panel.topic = (mnews && mnews.topic && NEWS_TOPICS[mnews.topic]) ? mnews.topic : (panel.topic || 'market');
+                }
             } else {
                 delete panel.topic;
+                delete panel.newsTopicKeys;
             }
             if (newType === 'prediction') {
                 const mem = panel.memory.prediction;
@@ -6832,9 +7044,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (newType === 'storms') {
                 const mem = panel.memory.storms;
                 panel.basin = mem?.basin || panel.basin || 'all';
+                const sb = mem?.stormBasins;
+                if (Array.isArray(sb) && sb.length > 1) {
+                    const ok = sb.filter((k) => STORM_BASINS.some((b) => b.key === k));
+                    if (ok.length > 1) {
+                        panel.stormBasins = [...new Set(ok)];
+                        panel.basin = panel.stormBasins[0];
+                    } else delete panel.stormBasins;
+                } else delete panel.stormBasins;
                 if (mem?.display === 'globe') panel.display = 'globe';
             } else {
                 delete panel.basin;
+                delete panel.stormBasins;
             }
             if (newType === 'eonet') {
                 const mem = panel.memory.eonet;
@@ -6964,38 +7185,92 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             renderAllPanels();
         }
 
-        function setStormBasin(pid, basin) {
+        /** Per-panel tray chip long-press (~0.5s) = Shift+click for multi-select (NEWS topics, STORMS basins, EONET, EXTERNAL ACCOUNT). */
+        const trayLongPressByPid = new Map();
+
+        function trayChipLongPressPointerDown(ev, pid, longFn) {
+            if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+            let st = trayLongPressByPid.get(pid) || { timer: null, consumed: false };
+            trayLongPressByPid.set(pid, st);
+            st.consumed = false;
+            clearTimeout(st.timer);
+            st.timer = setTimeout(() => {
+                st.timer = null;
+                st.consumed = true;
+                longFn();
+            }, 520);
+        }
+
+        function trayChipLongPressPointerUp(pid) {
+            const st = trayLongPressByPid.get(pid);
+            if (st) clearTimeout(st.timer);
+        }
+
+        function trayChipLongPressConsumeClick(pid) {
+            const st = trayLongPressByPid.get(pid);
+            if (st && st.consumed) {
+                st.consumed = false;
+                return true;
+            }
+            return false;
+        }
+
+        function setStormBasin(ev, pid, basin) {
             const panel = state.panels[pid];
             if (!panel || panel.type !== 'storms') return;
-            if (panel.basin === basin) return;
-            panel.basin = basin;
+            if (!STORM_BASINS.some((b) => b.key === basin)) return;
+            const prevKeys = getStormBasinKeys(panel);
+            const mult = !!(ev && (ev.shiftKey === true || ev.metaKey === true));
+            if (!mult && prevKeys.length === 1 && prevKeys[0] === basin) return;
+            let nextKeys;
+            if (!mult) {
+                nextKeys = [basin];
+            } else if (basin === 'all') {
+                nextKeys = ['all'];
+            } else {
+                let cur = prevKeys.filter((k) => k !== 'all');
+                if (prevKeys.includes('all')) cur = [];
+                if (cur.includes(basin)) cur = cur.filter((k) => k !== basin);
+                else cur.push(basin);
+                if (!cur.length) cur = ['all'];
+                nextKeys = [...new Set(cur)];
+            }
+            const same = nextKeys.length === prevKeys.length && nextKeys.every((k) => prevKeys.includes(k));
+            if (same) return;
+            if (nextKeys.length === 1) {
+                delete panel.stormBasins;
+                panel.basin = nextKeys[0];
+            } else {
+                panel.stormBasins = nextKeys;
+                panel.basin = nextKeys[0];
+            }
             saveState();
             renderAllPanels();
         }
 
-        let extEonetChipPress = { timer: null, consumed: false };
-
-        function eonetChipPointerDown(ev, pid, filterKey) {
-            if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-            extEonetChipPress.consumed = false;
-            clearTimeout(extEonetChipPress.timer);
-            extEonetChipPress.timer = setTimeout(() => {
-                extEonetChipPress.timer = null;
-                extEonetChipPress.consumed = true;
-                setEonetFilter({ shiftKey: true }, pid, filterKey);
-            }, 520);
+        function stormBasinChipPointerDown(ev, pid, basinKey) {
+            trayChipLongPressPointerDown(ev, pid, () => setStormBasin({ shiftKey: true }, pid, basinKey));
         }
 
-        function eonetChipPointerUp() {
-            clearTimeout(extEonetChipPress.timer);
-            extEonetChipPress.timer = null;
+        function stormBasinChipPointerUp(pid) {
+            trayChipLongPressPointerUp(pid);
+        }
+
+        function stormBasinChipClick(ev, pid, basinKey) {
+            if (trayChipLongPressConsumeClick(pid)) return;
+            setStormBasin(ev, pid, basinKey);
+        }
+
+        function eonetChipPointerDown(ev, pid, filterKey) {
+            trayChipLongPressPointerDown(ev, pid, () => setEonetFilter({ shiftKey: true }, pid, filterKey));
+        }
+
+        function eonetChipPointerUp(pid) {
+            trayChipLongPressPointerUp(pid);
         }
 
         function eonetChipClick(ev, pid, filterKey) {
-            if (extEonetChipPress.consumed) {
-                extEonetChipPress.consumed = false;
-                return;
-            }
+            if (trayChipLongPressConsumeClick(pid)) return;
             setEonetFilter(ev, pid, filterKey);
         }
 
@@ -7245,12 +7520,48 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             }
         }
 
-        function setNewsTopic(pid, topic) {
+        function newsTopicChipPointerDown(ev, pid, topicKey) {
+            trayChipLongPressPointerDown(ev, pid, () => setNewsTopic({ shiftKey: true }, pid, topicKey));
+        }
+
+        function newsTopicChipPointerUp(pid) {
+            trayChipLongPressPointerUp(pid);
+        }
+
+        function newsTopicChipClick(ev, pid, topicKey) {
+            if (trayChipLongPressConsumeClick(pid)) return;
+            setNewsTopic(ev, pid, topicKey);
+        }
+
+        /** ev: optional (null = exclusive select). Shift/⌘/long-press = add/remove topic; merged RSS when multiple. */
+        function setNewsTopic(ev, pid, topicKey) {
             const panel = state.panels[pid];
-            panel.topic = topic;
+            if (!panel || panel.type !== 'news') return;
+            if (!NEWS_TOPICS[topicKey]) return;
+            const prevKeys = getNewsPanelTopicKeys(panel);
+            const mult = !!(ev && (ev.shiftKey === true || ev.metaKey === true));
+            if (!mult && prevKeys.length === 1 && prevKeys[0] === topicKey) return;
+            let nextKeys;
+            if (!mult) {
+                nextKeys = [topicKey];
+            } else {
+                let cur = [...prevKeys];
+                if (cur.includes(topicKey)) cur = cur.filter((k) => k !== topicKey);
+                else cur.push(topicKey);
+                if (!cur.length) cur = ['market'];
+                nextKeys = [...new Set(cur)];
+            }
+            const same = nextKeys.length === prevKeys.length && nextKeys.every((k) => prevKeys.includes(k));
+            if (same) return;
+            if (nextKeys.length === 1) {
+                delete panel.newsTopicKeys;
+                panel.topic = nextKeys[0];
+            } else {
+                panel.newsTopicKeys = nextKeys;
+                panel.topic = nextKeys[0];
+            }
             delete panel._articles;
             saveState();
-            // Re-render this panel title + tray (topic chip active state) + body
             renderAllPanels();
             document.getElementById(`panel-${pid}`)?.classList.add('tray-open');
             refreshNewsPanels().then(() => rerenderPanelBody(pid));
@@ -7264,7 +7575,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             NEWS_TOPICS[key] = { label, query: q };
             if (!Array.isArray(state.customNewsTopics)) state.customNewsTopics = [];
             state.customNewsTopics.push({ key, query: q, label });
-            setNewsTopic(pid, key);
+            setNewsTopic(null, pid, key);
         }
 
         /** Remove a custom NEWS topic (same [×] pattern as watchlist tags). Built-in chips are not removable. */
@@ -7275,8 +7586,20 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             let needNewsRefresh = false;
             for (const opid of state.layout) {
                 const p = state.panels[opid];
-                if (p?.type !== 'news' || p.topic !== topicKey) continue;
-                p.topic = 'market';
+                if (p?.type !== 'news') continue;
+                const keys = getNewsPanelTopicKeys(p);
+                if (!keys.includes(topicKey)) continue;
+                const next = keys.filter((k) => k !== topicKey);
+                if (!next.length) {
+                    p.topic = 'market';
+                    delete p.newsTopicKeys;
+                } else if (next.length === 1) {
+                    p.topic = next[0];
+                    delete p.newsTopicKeys;
+                } else {
+                    p.newsTopicKeys = next;
+                    p.topic = next[0];
+                }
                 delete p._articles;
                 needNewsRefresh = true;
             }
@@ -7470,29 +7793,16 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             void refreshAll();
         }
 
-        let extAccChipPress = { timer: null, consumed: false };
-
         function externalAccountChipPointerDown(ev, pid, index) {
-            if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-            extAccChipPress.consumed = false;
-            clearTimeout(extAccChipPress.timer);
-            extAccChipPress.timer = setTimeout(() => {
-                extAccChipPress.timer = null;
-                extAccChipPress.consumed = true;
-                setExternalAccountSelection({ shiftKey: true }, pid, index);
-            }, 520);
+            trayChipLongPressPointerDown(ev, pid, () => setExternalAccountSelection({ shiftKey: true }, pid, index));
         }
 
-        function externalAccountChipPointerUp() {
-            clearTimeout(extAccChipPress.timer);
-            extAccChipPress.timer = null;
+        function externalAccountChipPointerUp(pid) {
+            trayChipLongPressPointerUp(pid);
         }
 
         function externalAccountChipClick(ev, pid, index) {
-            if (extAccChipPress.consumed) {
-                extAccChipPress.consumed = false;
-                return;
-            }
+            if (trayChipLongPressConsumeClick(pid)) return;
             setExternalAccountSelection(ev, pid, index);
         }
 
