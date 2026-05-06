@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ROTHBERG TERMINAL v1.5.1</title>
+    <title>ROTHBERG TERMINAL v1.5.2</title>
     <meta name="description" content="A free, single-file Rothberg Terminal: a browser-only Bloomberg-style dashboard — phosphor green on black, live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
     <meta property="og:title" content="ROTHBERG TERMINAL">
     <meta property="og:description" content="Free, browser-only Rothberg Terminal — live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
@@ -424,7 +424,7 @@
         .external-holdings-total {
             display: grid;
             grid-template-columns: minmax(56px, 1fr) 64px 72px 80px 80px 72px 72px;
-            gap: 4px 4px;
+            gap: 4px 2px; /* tighter QTY↔PRICE (and other) column gutters */
             align-items: baseline;
             padding: 4px 4px;
             font-variant-numeric: tabular-nums;
@@ -467,7 +467,7 @@
         .external-holdings-subtotal {
             display: grid;
             grid-template-columns: minmax(56px, 1fr) 64px 72px 80px 80px 72px 72px;
-            gap: 4px 4px;
+            gap: 4px 2px;
             align-items: baseline;
             padding: 4px 4px;
             margin-top: 2px;
@@ -1104,7 +1104,7 @@
     <div class="terminal">
         <div class="header">
             <div>
-                <div class="header-title">ROTHBERG TERMINAL v1.5.1</div>
+                <div class="header-title">ROTHBERG TERMINAL v1.5.2</div>
                 <div class="header-subtitle" id="headerSubtitle">[ FREE DATA · CORE MARKETS ]</div>
             </div>
             <div class="header-right">
@@ -1331,6 +1331,11 @@ in the remaining files). <strong>CLEAR ALL</strong> removes every file and also 
 overrides, manual cost, and restricted-lot Yahoo mappings — use per-file <strong>[×]</strong> if you
 want to keep that work. <strong>ADD CSV</strong> with the <em>same filename</em> as an entry already in
 <strong>FILE</strong> replaces that entry (typical Fidelity re-download) instead of duplicating it.
+
+<strong>TOTALS! chip row:</strong> With <strong>TOTALS!</strong> selected, every real account chip is
+  <em>lit</em> (included in the rollup). Click an account to dim it and drop that account from the
+  combined table; click again to add back. Click <strong>TOTALS!</strong> a second time when any
+  chips are dimmed to include all accounts again.
 
 <strong>ACCOUNT chips — combine a subset (like mini-TOTALS!):</strong>
   - Normal click: one account (or TOTALS! for everything), same as before.
@@ -2548,13 +2553,16 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (subset) {
                 const ok = subset.filter((n) => vis.includes(n) && n !== EXTERNAL_ACCOUNT_TOTALS_ID);
                 if (ok.length >= 2) {
+                    delete panel.externalTotalsExcludedAccounts;
                     panel.externalCombinedAccounts = ok;
                     panel.externalSelectedAccount = EXTERNAL_ACCOUNT_SUBSET_ID;
                 } else if (ok.length === 1) {
                     delete panel.externalCombinedAccounts;
+                    delete panel.externalTotalsExcludedAccounts;
                     panel.externalSelectedAccount = ok[0];
                 } else {
                     delete panel.externalCombinedAccounts;
+                    delete panel.externalTotalsExcludedAccounts;
                     panel.externalSelectedAccount = vis[0] || null;
                 }
                 return;
@@ -2562,14 +2570,24 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             if (panel.externalSelectedAccount && !vis.includes(panel.externalSelectedAccount)) {
                 panel.externalSelectedAccount = vis[0] || null;
             }
+            const realVis = vis.filter((n) => n && n !== EXTERNAL_ACCOUNT_TOTALS_ID);
+            if (Array.isArray(panel.externalTotalsExcludedAccounts) && panel.externalTotalsExcludedAccounts.length) {
+                const ok = new Set(realVis);
+                const next = panel.externalTotalsExcludedAccounts.filter((n) => n && ok.has(n));
+                if (next.length) panel.externalTotalsExcludedAccounts = next;
+                else delete panel.externalTotalsExcludedAccounts;
+            }
+            if (realVis.length <= 1) delete panel.externalTotalsExcludedAccounts;
         }
 
-        /** TOTALS! rollup excludes rows whose account was hidden ([×]); empty account name still counts. */
+        /** TOTALS! rollup excludes hidden accounts ([×]) and accounts toggled off the TOTALS chip row. */
         function externalRowIncludedInTotals(panel, row) {
             const n = row && row.accountName;
             if (!n) return true;
             const hide = Array.isArray(panel.externalHiddenAccounts) ? panel.externalHiddenAccounts : [];
-            return !hide.includes(n);
+            if (hide.includes(n)) return false;
+            const skip = Array.isArray(panel.externalTotalsExcludedAccounts) ? panel.externalTotalsExcludedAccounts : [];
+            return !skip.includes(n);
         }
 
         /** Re-render quote tables / heatmaps that list this symbol (sparkline picks up merged closes). */
@@ -3248,6 +3266,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         : undefined,
                 externalSymbolOverrides: { ...(p.externalSymbolOverrides || {}) },
                 externalHiddenAccounts: [...(p.externalHiddenAccounts || [])],
+                externalTotalsExcludedAccounts:
+                    Array.isArray(p.externalTotalsExcludedAccounts) && p.externalTotalsExcludedAccounts.length
+                        ? [...p.externalTotalsExcludedAccounts]
+                        : undefined,
                 externalCostBasisOverrides: { ...(p.externalCostBasisOverrides || {}) },
                 restrictedLotPrefs: lotPrefs,
             };
@@ -4339,13 +4361,30 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     ? srcs.map(s => `<span class="tray-tag">${escapeHTML(s.fileName || 'CSV')}<span class="tray-tag-x" onclick="removeExternalAccountBundle('${escapeAttr(pid)}','${escapeAttr(String(s.id || ''))}')">[×]</span></span>`).join('')
                     : '<span class="no-data">(no file)</span>';
                 const subsetSel = externalPanelSubsetAccountNames(panel);
+                const acSel = panel.externalSelectedAccount;
+                const totalsEx = Array.isArray(panel.externalTotalsExcludedAccounts) ? panel.externalTotalsExcludedAccounts : [];
                 const chips = names.map((n, i) => {
-                    const acSel = panel.externalSelectedAccount;
-                    const active = subsetSel
-                        ? (n !== EXTERNAL_ACCOUNT_TOTALS_ID && subsetSel.includes(n) ? ' active' : '')
-                        : (n === acSel ? ' active' : '');
                     const lab = externalAccountTrayLabel(n, panel);
-                    const tit = escapeAttr(`${lab} · Shift+click or ⌘+click (or long-press ~0.5s) to combine accounts`);
+                    let active = '';
+                    let tit = '';
+                    if (subsetSel) {
+                        active = (n !== EXTERNAL_ACCOUNT_TOTALS_ID && subsetSel.includes(n)) ? ' active' : '';
+                        tit = `${lab} · Shift+click or ⌘+click (or long-press ~0.5s) to combine accounts`;
+                    } else if (acSel === EXTERNAL_ACCOUNT_TOTALS_ID) {
+                        if (n === EXTERNAL_ACCOUNT_TOTALS_ID) {
+                            active = ' active';
+                            tit = 'TOTALS! · Lit accounts are in the rollup; dimmed are out. Click TOTALS! again to include all.';
+                        } else {
+                            active = totalsEx.includes(n) ? '' : ' active';
+                            tit = totalsEx.includes(n)
+                                ? `${lab} · out of TOTALS! — click to add back`
+                                : `${lab} · in TOTALS! — click to remove from rollup`;
+                        }
+                    } else {
+                        active = (n === acSel) ? ' active' : '';
+                        tit = `${lab} · Shift+click or ⌘+click (or long-press ~0.5s) to combine accounts`;
+                    }
+                    tit = escapeAttr(tit);
                     const hideX = n === EXTERNAL_ACCOUNT_TOTALS_ID
                         ? ''
                         : `<span class="tray-tag-x" role="button" tabindex="0" onclick="event.preventDefault();event.stopPropagation();externalAccountHideAccountByIndex('${escapeAttr(pid)}',${i})">[×]</span>`;
@@ -4371,7 +4410,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     ${names.length > 2 ? `
                     <div class="tray-row">
                         <span class="tray-label"></span>
-                        <span class="tray-hint"><strong>Combine:</strong> Shift+click or ⌘+click another account (or <strong>long-press ~0.5s</strong> on phone/tablet) to roll up only those accounts — same layout as TOTALS!, not every file. Click TOTALS! to clear the multi-select.</span>
+                        <span class="tray-hint"><strong>Combine:</strong> Shift+click or ⌘+click another account (or <strong>long-press ~0.5s</strong> on phone/tablet) to roll up only those accounts — same layout as TOTALS!, not every file. Click <strong>TOTALS!</strong> to clear the multi-select. On <strong>TOTALS!</strong> alone, every real account chip is lit; click one to drop it from the rollup (click again to add back; click <strong>TOTALS!</strong> twice to reset all).</span>
                     </div>` : ''}
                     ${externalPanelHasRows(panel) ? `
                     <div class="tray-row">
@@ -6988,6 +7027,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 delete panel.externalImport;
                 delete panel.externalSelectedAccount;
                 delete panel.externalCombinedAccounts;
+                delete panel.externalTotalsExcludedAccounts;
                 delete panel.externalSymbolOverrides;
                 delete panel.externalHiddenAccounts;
                 delete panel.externalCostBasisOverrides;
@@ -7141,6 +7181,18 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         panel.externalSelectedAccount = vis.includes(sel) ? sel : (vis[0] || null);
                     }
                     externalNormalizeSelectionAfterAccountListChange(panel);
+                    if (
+                        mem?.externalTotalsExcludedAccounts
+                        && Array.isArray(mem.externalTotalsExcludedAccounts)
+                        && panel.externalSelectedAccount === EXTERNAL_ACCOUNT_TOTALS_ID
+                    ) {
+                        const realN = getExternalAccountNamesForPanel(panel).filter((n) => n !== EXTERNAL_ACCOUNT_TOTALS_ID);
+                        const ok = new Set(realN);
+                        const ex2 = mem.externalTotalsExcludedAccounts.filter((n) => n && ok.has(n));
+                        if (ex2.length && ex2.length < realN.length) {
+                            panel.externalTotalsExcludedAccounts = ex2;
+                        }
+                    }
                     if (mem?.plDisplayMode === 'daily') panel.memory.externalAccount.plDisplayMode = 'daily';
                 }
                 if (mem?.externalSort && mem.externalSort.key) {
@@ -7737,6 +7789,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             delete p.externalImport;
             delete p.externalSelectedAccount;
             delete p.externalCombinedAccounts;
+            delete p.externalTotalsExcludedAccounts;
             delete p.externalSymbolOverrides;
             delete p.externalHiddenAccounts;
             delete p.externalCostBasisOverrides;
@@ -7835,6 +7888,19 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 && p.externalSelectedAccount === EXTERNAL_ACCOUNT_TOTALS_ID
                 && !p.externalCombinedAccounts
             ) {
+                const ex = p.externalTotalsExcludedAccounts;
+                if (Array.isArray(ex) && ex.length) {
+                    delete p.externalTotalsExcludedAccounts;
+                    p.memory = p.memory || {};
+                    if (externalPanelHasRows(p)) {
+                        p.memory.externalAccount = buildExternalAccountMemorySnapshot(p);
+                    }
+                    saveState();
+                    state.ui.openTray = pid;
+                    renderAllPanels();
+                    document.getElementById(`panel-${pid}`)?.classList.add('tray-open');
+                    void refreshAll();
+                }
                 return;
             }
             if (!mult && clicked !== EXTERNAL_ACCOUNT_TOTALS_ID && !p.externalCombinedAccounts && p.externalSelectedAccount === clicked) {
@@ -7843,8 +7909,10 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
 
             if (clicked === EXTERNAL_ACCOUNT_TOTALS_ID) {
                 delete p.externalCombinedAccounts;
+                delete p.externalTotalsExcludedAccounts;
                 p.externalSelectedAccount = EXTERNAL_ACCOUNT_TOTALS_ID;
             } else if (mult) {
+                delete p.externalTotalsExcludedAccounts;
                 const cur = new Set();
                 const existing = externalPanelSubsetAccountNames(p);
                 if (existing) existing.forEach((n) => cur.add(n));
@@ -7860,16 +7928,35 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const ordered = names.filter((n) => n !== EXTERNAL_ACCOUNT_TOTALS_ID && cur.has(n));
                 if (!ordered.length) {
                     delete p.externalCombinedAccounts;
+                    delete p.externalTotalsExcludedAccounts;
                     p.externalSelectedAccount = EXTERNAL_ACCOUNT_TOTALS_ID;
                 } else if (ordered.length === 1) {
                     delete p.externalCombinedAccounts;
+                    delete p.externalTotalsExcludedAccounts;
                     p.externalSelectedAccount = ordered[0];
                 } else {
                     p.externalCombinedAccounts = ordered;
                     p.externalSelectedAccount = EXTERNAL_ACCOUNT_SUBSET_ID;
                 }
+            } else if (
+                p.externalSelectedAccount === EXTERNAL_ACCOUNT_TOTALS_ID
+                && clicked !== EXTERNAL_ACCOUNT_TOTALS_ID
+            ) {
+                const real = names.filter((n) => n !== EXTERNAL_ACCOUNT_TOTALS_ID);
+                let ex = Array.isArray(p.externalTotalsExcludedAccounts) ? [...p.externalTotalsExcludedAccounts] : [];
+                const pos = ex.indexOf(clicked);
+                if (pos >= 0) {
+                    ex.splice(pos, 1);
+                } else {
+                    const trial = [...ex, clicked];
+                    const inclCount = real.filter((n) => !trial.includes(n)).length;
+                    if (inclCount >= 1) ex = trial;
+                }
+                if (ex.length) p.externalTotalsExcludedAccounts = ex;
+                else delete p.externalTotalsExcludedAccounts;
             } else {
                 delete p.externalCombinedAccounts;
+                delete p.externalTotalsExcludedAccounts;
                 p.externalSelectedAccount = clicked;
             }
 
