@@ -36,6 +36,7 @@
             --highlight: #00ff0033;
             /* Cached quote / holdings numbers while a refresh is in flight (still used for totals). */
             --stale: #5fa060;
+            --stale-negative: #a04848;
         }
 
         ::selection { background: var(--text-primary); color: var(--bg-primary); }
@@ -423,7 +424,7 @@
         .external-holdings-total {
             display: grid;
             grid-template-columns: minmax(56px, 1fr) 64px 72px 80px 80px 72px 72px;
-            gap: 4px 6px;
+            gap: 4px 4px;
             align-items: baseline;
             padding: 4px 4px;
             font-variant-numeric: tabular-nums;
@@ -466,7 +467,7 @@
         .external-holdings-subtotal {
             display: grid;
             grid-template-columns: minmax(56px, 1fr) 64px 72px 80px 80px 72px 72px;
-            gap: 4px 6px;
+            gap: 4px 4px;
             align-items: baseline;
             padding: 4px 4px;
             margin-top: 2px;
@@ -511,8 +512,8 @@
         .external-holdings-row .num.neutral { color: var(--color-neutral); }
         .external-holdings-row.stale .num,
         .external-holdings-row.stale .num.positive,
-        .external-holdings-row.stale .num.negative,
         .external-holdings-row.stale .num.neutral { color: var(--stale); }
+        .external-holdings-row.stale .num.negative { color: var(--stale-negative); }
         .external-src-tag {
             margin-left: 4px;
             font-size: 8px;
@@ -1683,7 +1684,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
         let state = structuredClone(DEFAULT_STATE);
         const quoteCache = {};   // { symbol: { price, change, changePercent, previousClose, ts, stale } }
         /** Persist last-good quotes across reloads / new builds (in-memory quoteCache alone was empty on every load). */
-        const QUOTE_CACHE_STORAGE_KEY = 'bloomberg_quote_cache_v1';
+        const QUOTE_CACHE_STORAGE_KEY = 'bloomberg_quote_cache_v2';
         const QUOTE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
         const QUOTE_CACHE_MAX_ENTRIES = 400;
         const QUOTE_CACHE_PERSIST_DEBOUNCE_MS = 500;
@@ -2055,6 +2056,8 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 let preVol = 0, postVol = 0, regVolFromBars = 0;
                 let lastPreClose = null, lastPreTime = null;
                 let lastPostClose = null, lastPostTime = null;
+                let lastRegClose = null;
+                let lastBarBeforePre = null;
                 let preHas = false, postHas = false;
                 for (let i = 0; i < timestamps.length; i++) {
                     const t = timestamps[i];
@@ -2068,16 +2071,17 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                         if (c != null) { lastPostClose = c; lastPostTime = t; }
                     } else if (regWin && t >= regWin[0] && t < regWin[1]) {
                         if (Number.isFinite(v)) regVolFromBars += v;
+                        if (c != null) lastRegClose = c;
                     }
+                    if (preWin && c != null && t < preWin[0]) lastBarBeforePre = c;
                 }
 
-                // Pre-market change vs last official regular close (`regularMarketPrice`
-                // during PRE — same anchor as POST uses). `previousClose` here is
-                // chartPreviousClose ?? previousClose: Yahoo uses it for the *completed*
-                // session's daily REG move, but it is one session behind `regularMarketPrice`
-                // in premarket, so PRE change vs `previousClose` looked like "vs two closes ago".
-                // Staleness: only trust `meta.preMarketPrice` / `postMarketPrice`
-                // when their timestamp falls inside today's pre/post window.
+                // PRE/AH anchors come from the bar series, not meta. Yahoo's chart
+                // endpoint at range=1d during PRE-market sometimes returns yesterday's
+                // full session + today's PRE bars (so chartPreviousClose is *two*
+                // closes ago) and sometimes only today's PRE (so regularMarketPrice
+                // can lag a day). Both meta-derived anchors have been seen wrong on
+                // different mornings; deriving from bars sidesteps that.
                 const preInWindow  = Number.isFinite(meta.preMarketTime)  && preWin
                     && meta.preMarketTime  >= preWin[0]  && meta.preMarketTime  < preWin[1];
                 const postInWindow = Number.isFinite(meta.postMarketTime) && postWin
@@ -2088,10 +2092,12 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const postMarketPrice = lastPostClose != null
                     ? lastPostClose
                     : (Number.isFinite(meta.postMarketPrice) && postInWindow ? meta.postMarketPrice : null);
-                const preMarketChange  = preMarketPrice  != null && regularPrice != null ? (preMarketPrice  - regularPrice) : null;
-                const postMarketChange = postMarketPrice != null && regularPrice  != null ? (postMarketPrice - regularPrice)  : null;
-                const preMarketChangePercent  = preMarketChange  != null && regularPrice ? (preMarketChange  / regularPrice) * 100 : null;
-                const postMarketChangePercent = postMarketChange != null && regularPrice  ? (postMarketChange / regularPrice)  * 100 : null;
+                const preAnchor  = lastBarBeforePre ?? meta.chartPreviousClose ?? meta.previousClose ?? regularPrice;
+                const postAnchor = lastRegClose ?? regularPrice;
+                const preMarketChange  = preMarketPrice  != null && preAnchor  != null ? (preMarketPrice  - preAnchor)  : null;
+                const postMarketChange = postMarketPrice != null && postAnchor != null ? (postMarketPrice - postAnchor) : null;
+                const preMarketChangePercent  = preMarketChange  != null && preAnchor  ? (preMarketChange  / preAnchor)  * 100 : null;
+                const postMarketChangePercent = postMarketChange != null && postAnchor ? (postMarketChange / postAnchor) * 100 : null;
 
                 // Derive marketState from tradingPeriod timestamps when meta
                 // doesn't provide it. Yahoo's values: PREPRE, PRE, REGULAR,
