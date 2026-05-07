@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ROTHBERG TERMINAL v1.5.2</title>
+    <title>ROTHBERG TERMINAL v1.5.3</title>
     <meta name="description" content="A free, single-file Rothberg Terminal: a browser-only Bloomberg-style dashboard — phosphor green on black, live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
     <meta property="og:title" content="ROTHBERG TERMINAL">
     <meta property="og:description" content="Free, browser-only Rothberg Terminal — live stocks, indices, crypto, forex, commodities, bonds, news, and movers. No API keys, no backend.">
@@ -1104,7 +1104,7 @@
     <div class="terminal">
         <div class="header">
             <div>
-                <div class="header-title">ROTHBERG TERMINAL v1.5.2</div>
+                <div class="header-title">ROTHBERG TERMINAL v1.5.3</div>
                 <div class="header-subtitle" id="headerSubtitle">[ FREE DATA · CORE MARKETS ]</div>
             </div>
             <div class="header-right">
@@ -1332,10 +1332,10 @@ overrides, manual cost, and restricted-lot Yahoo mappings — use per-file <stro
 want to keep that work. <strong>ADD CSV</strong> with the <em>same filename</em> as an entry already in
 <strong>FILE</strong> replaces that entry (typical Fidelity re-download) instead of duplicating it.
 
-<strong>TOTALS! chip row:</strong> With <strong>TOTALS!</strong> selected, every real account chip is
-  <em>lit</em> (included in the rollup). Click an account to dim it and drop that account from the
-  combined table; click again to add back. Click <strong>TOTALS!</strong> a second time when any
-  chips are dimmed to include all accounts again.
+<strong>TOTALS! chip row:</strong> With <strong>TOTALS!</strong> selected, the <strong>TOTALS!</strong> chip is
+  <em>lit</em> and sub-account chips stay <em>dim</em> while every non-hidden account is in the rollup.
+  Click an account to exclude it from the combined table (included accounts then light up so you can see who remains);
+  click again to add back. Click <strong>TOTALS!</strong> when any account is excluded to reset — all sub chips dim again.
 
 <strong>ACCOUNT chips — combine a subset (like mini-TOTALS!):</strong>
   - Normal click: one account (or TOTALS! for everything), same as before.
@@ -3379,6 +3379,25 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             return keys;
         }
 
+        /**
+         * CSV reload: prevCost is frozen before import; migrateLegacyExternalCostBasisForRestricted may move
+         * Yahoo|qty → id:CUSIP|qty only on the live panel — merging prevCost∩keySet alone drops those migrated values.
+         * Prefer live override per key, then prev snapshot (same numeric restricted id + qty → cost basis survives re-import).
+         */
+        function externalCostBasisOverridesPrunedToImport(panel, prevCost, keySet) {
+            const prev = prevCost && typeof prevCost === 'object' ? prevCost : {};
+            const live = panel.externalCostBasisOverrides && typeof panel.externalCostBasisOverrides === 'object'
+                ? panel.externalCostBasisOverrides
+                : {};
+            const next = {};
+            for (const k of keySet) {
+                let v = live[k];
+                if (!Number.isFinite(v)) v = prev[k];
+                if (Number.isFinite(v)) next[k] = v;
+            }
+            panel.externalCostBasisOverrides = next;
+        }
+
         /** Merge live restricted SYM + manual cost totals into memory for export / rehydrate after CSV changes. */
         function externalRefreshRestrictedLotPrefsInMemory(panel) {
             if (!panel || panel.type !== 'externalAccount') return;
@@ -3394,7 +3413,17 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                 const ku = ck.toUpperCase();
                 const y = ov[ck];
                 const costK = externalCostBasisOverrideKey(panel, r);
-                const mt = costK && cost[costK];
+                let mt = costK && cost[costK];
+                // Manual basis may exist only under legacy Yahoo|qty (see effectiveCostBasis) — copy into prefs so reload/rehydrate keeps it.
+                if (!(mt != null && Number.isFinite(mt)) && costK) {
+                    const yk = getExternalRowQuoteKey(panel, r);
+                    const q = normalizeQtyForCostKey(r.quantity);
+                    if (yk && q) {
+                        const legacy = `${yk}|${q}`;
+                        const v2 = cost[legacy];
+                        if (Number.isFinite(v2)) mt = v2;
+                    }
+                }
                 const ent = { ...(prev[ku] || {}) };
                 if (y != null && String(y).trim()) ent.yahooSym = String(y).trim();
                 else delete ent.yahooSym;
@@ -4373,12 +4402,17 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     } else if (acSel === EXTERNAL_ACCOUNT_TOTALS_ID) {
                         if (n === EXTERNAL_ACCOUNT_TOTALS_ID) {
                             active = ' active';
-                            tit = 'TOTALS! · Lit accounts are in the rollup; dimmed are out. Click TOTALS! again to include all.';
+                            tit = totalsEx.length
+                                ? 'TOTALS! · Lit accounts are in the rollup; dimmed are out. Click TOTALS! again to include all.'
+                                : 'TOTALS! · All accounts in rollup (sub chips dim). Click an account to exclude it.';
                         } else {
-                            active = totalsEx.includes(n) ? '' : ' active';
+                            // Sub chips stay dim when full rollup (no exclusions) so TOTALS!→subset→TOTALS! does not leave every sub lit.
+                            active = totalsEx.includes(n) ? '' : (totalsEx.length ? ' active' : '');
                             tit = totalsEx.includes(n)
                                 ? `${lab} · out of TOTALS! — click to add back`
-                                : `${lab} · in TOTALS! — click to remove from rollup`;
+                                : (totalsEx.length
+                                    ? `${lab} · in TOTALS! — click to remove from rollup`
+                                    : `${lab} · in TOTALS! rollup — click to exclude`);
                         }
                     } else {
                         active = (n === acSel) ? ' active' : '';
@@ -4410,7 +4444,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
                     ${names.length > 2 ? `
                     <div class="tray-row">
                         <span class="tray-label"></span>
-                        <span class="tray-hint"><strong>Combine:</strong> Shift+click or ⌘+click another account (or <strong>long-press ~0.5s</strong> on phone/tablet) to roll up only those accounts — same layout as TOTALS!, not every file. Click <strong>TOTALS!</strong> to clear the multi-select. On <strong>TOTALS!</strong> alone, every real account chip is lit; click one to drop it from the rollup (click again to add back; click <strong>TOTALS!</strong> twice to reset all).</span>
+                        <span class="tray-hint"><strong>Combine:</strong> Shift+click or ⌘+click another account (or <strong>long-press ~0.5s</strong> on phone/tablet) to roll up only those accounts — same layout as TOTALS!, not every file. Click <strong>TOTALS!</strong> to clear the multi-select. On <strong>TOTALS!</strong>, only that chip is lit while all accounts are in the rollup; click a sub-account to exclude it (then remaining accounts light up). Click <strong>TOTALS!</strong> again if any are excluded to reset.</span>
                     </div>` : ''}
                     ${externalPanelHasRows(panel) ? `
                     <div class="tray-row">
@@ -7761,11 +7795,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             externalRehydrateRestrictedLotPrefsToLive(p);
             migrateLegacyExternalCostBasisForRestricted(p);
             const keySet = collectExternalCostBasisKeysAcrossImport(p);
-            const nextCost = {};
-            for (const [k, v] of Object.entries(prevCost)) {
-                if (keySet.has(k) && Number.isFinite(v)) nextCost[k] = v;
-            }
-            p.externalCostBasisOverrides = nextCost;
+            externalCostBasisOverridesPrunedToImport(p, prevCost, keySet);
             externalRefreshRestrictedLotPrefsInMemory(p);
             externalNormalizeSelectionAfterAccountListChange(p);
             delete p._externalSymEditCsvKey;
@@ -7837,11 +7867,7 @@ Press [R] or wait for auto-refresh (default 60s) to retry.</pre>
             const prevCost = (p.externalCostBasisOverrides && typeof p.externalCostBasisOverrides === 'object')
                 ? { ...p.externalCostBasisOverrides }
                 : {};
-            const nextCost = {};
-            for (const [k, v] of Object.entries(prevCost)) {
-                if (keySet.has(k) && Number.isFinite(v)) nextCost[k] = v;
-            }
-            p.externalCostBasisOverrides = nextCost;
+            externalCostBasisOverridesPrunedToImport(p, prevCost, keySet);
             externalRefreshRestrictedLotPrefsInMemory(p);
             const allAcct = new Set(getExternalAccountNamesFromImport(p));
             p.externalHiddenAccounts = Array.isArray(p.externalHiddenAccounts)
